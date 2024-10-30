@@ -1,0 +1,10 @@
+name: career-nlp
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - -r requirements.txt
