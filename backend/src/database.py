@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, ARRAY
+from sqlalchemy import Column, Integer, String, Float, Boolean, BigInteger, Text, ARRAY
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -8,19 +9,47 @@ class JobPosting(Base):
     __tablename__ = 'job_postings'
     
     id = Column(Integer, primary_key=True)
-    job_id = Column(String, unique=True)
-    company_name = Column(String)
-    title = Column(String)
+    job_id = Column(BigInteger, unique=True)
+    company_name = Column(Text)
+    title = Column(Text)
     description = Column(Text)
-    processed_description = Column(Text)
     max_salary = Column(Float)
+    pay_period = Column(String(50))
+    location = Column(Text)
+    company_id = Column(Float)
+    views = Column(Float)
+    med_salary = Column(Float, nullable=True)
     min_salary = Column(Float)
-    med_salary = Column(Float)
-    location = Column(String)
-    remote_allowed = Column(Boolean)
-    job_category = Column(String)
-    extracted_skills = Column(ARRAY(String))
-    description_embedding = Column(ARRAY(Float))  # Store embeddings as array
+    formatted_work_type = Column(String(50))
+    applies = Column(Float)
+    original_listed_time = Column(BigInteger)
+    remote_allowed = Column(Boolean, nullable=True)
+    job_posting_url = Column(Text)
+    application_url = Column(Text, nullable=True)
+    application_type = Column(String(50))
+    expiry = Column(BigInteger)
+    closed_time = Column(BigInteger, nullable=True)
+    formatted_experience_level = Column(String(50), nullable=True)
+    skills_desc = Column(Text)
+    listed_time = Column(BigInteger)
+    posting_domain = Column(Text, nullable=True)
+    sponsored = Column(Boolean)
+    work_type = Column(String(50))
+    currency = Column(String(10))
+    compensation_type = Column(String(50))
+    normalized_salary = Column(Float)
+    zip_code = Column(String(10))
+    fips = Column(String(10))
+    processed_title = Column(Text)
+    processed_description = Column(Text)
+    processed_skills_desc = Column(Text)
+    job_category = Column(String(50))
+    processed_min_salary = Column(Float)
+    processed_med_salary = Column(Float, nullable=True)
+    processed_max_salary = Column(Float)
+    processed_location = Column(String(100))
+    processed_work_type = Column(String(50))
+    description_embedding = Column(Vector(768))  # For semantic search
     
     def to_dict(self):
         return {
@@ -33,5 +62,4 @@ class JobPosting(Base):
             'location': self.location,
             'remote_allowed': self.remote_allowed,
             'job_category': self.job_category,
-            'skills': self.extracted_skills
         }

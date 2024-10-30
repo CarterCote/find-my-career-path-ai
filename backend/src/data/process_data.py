@@ -1,6 +1,7 @@
 import pandas as pd
 from pathlib import Path
 from preprocessor import JobPostingPreprocessor
+import csv
 
 def main():
     try:
@@ -23,14 +24,16 @@ def main():
         print("Processing data...")
         processed_df = preprocessor.preprocess_dataset(df)
         
-        # Convert extracted_skills lists to PostgreSQL array format
-        processed_df['extracted_skills'] = processed_df['extracted_skills'].apply(
-            lambda x: '{' + ','.join(x) + '}' if isinstance(x, list) and len(x) > 0 else '{}'
-        )
-        
         # Save processed data
         output_path = processed_dir / 'processed_jobs.csv'
-        processed_df.to_csv(output_path, index=False)
+        processed_df.to_csv(
+            output_path,
+            index=False,
+            quoting=csv.QUOTE_NONNUMERIC,
+            escapechar='\\',
+            na_rep='',
+            float_format='%.2f'
+        )
         print(f"Processed data saved to {output_path}")
         
         # Print processing summary
@@ -38,7 +41,6 @@ def main():
         print(f"Original records: {len(df)}")
         print(f"Processed records: {len(processed_df)}")
         print(f"Unique job categories: {processed_df['job_category'].nunique()}")
-        print(f"Total skills extracted: {processed_df['extracted_skills'].str.len().sum()}")
         
     except Exception as e:
         print(f"Error during processing: {str(e)}")

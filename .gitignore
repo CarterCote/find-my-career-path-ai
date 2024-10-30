@@ -39,3 +39,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 backend/data/
+
+# Environment variables
+backend/.env
+backend/.env.local
+backend/.env.test

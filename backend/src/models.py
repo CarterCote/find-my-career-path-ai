@@ -1,6 +1,6 @@
 import numpy as np
 from sqlalchemy import Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from .database import Base
 from pgvector.sqlalchemy import Vector
@@ -29,3 +29,11 @@ class Entry(Base):
     author_id = Column(Integer, ForeignKey("users.id"))
 
     created_by = relationship("User", back_populates="entries")
+
+
+class JobPosting(Base):
+    __tablename__ = "job_postings"
+    
+    id = Column(Integer, primary_key=True)
+    # ... your existing columns ...
+    description_embedding = Column(Vector(768))  # For semantic search
