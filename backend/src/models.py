@@ -1,39 +1,53 @@
-import numpy as np
-from sqlalchemy import Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB
+from sqlalchemy import Column, DateTime, Integer, String, Text, Boolean, JSON, func, ARRAY, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
-from pgvector.sqlalchemy import Vector
 
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True)
-    phone_number = Column(String(12), nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    hashed_password = Column(String)
-
-    entries = relationship("Entry", back_populates="created_by")
-
-
-class Entry(Base):
-    __tablename__ = "entries"
-
-    id = Column(Integer, primary_key=True)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    date = Column(Date, server_default=func.now(), nullable=False)
-    emotions = Column(String, nullable=True)
-    content = Column(Text, nullable=False)
-    embedding = Column(Vector(768), nullable=True)
-    author_id = Column(Integer, ForeignKey("users.id"))
-
-    created_by = relationship("User", back_populates="entries")
-
-
-class JobPosting(Base):
-    __tablename__ = "job_postings"
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
     
     id = Column(Integer, primary_key=True)
-    # ... your existing columns ...
-    description_embedding = Column(Vector(768))  # For semantic search
+    session_id = Column(String, nullable=False, unique=True)
+    
+    # Structured preferences
+    core_values = Column(ARRAY(String))      # Top 3 core values
+    work_culture = Column(ARRAY(String))     # Top 3 work culture preferences
+    skills = Column(ARRAY(String))           # Top 3 skills
+    top_six = Column(ARRAY(String))          # Top 6 overall preferences
+    
+    # Rankings/scores (optional)
+    preference_rankings = Column(JSON)        # Store detailed rankings if needed
+    
+    # Free-form responses
+    additional_interests = Column(Text)       # Free text for additional interests
+    background = Column(Text)                # Previous experience, education, etc.
+    goals = Column(Text)                     # Career goals
+    
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
+    career_recommendations = relationship("CareerRecommendation", back_populates="user", cascade="all, delete-orphan")
+
+class CareerRecommendation(Base):
+    __tablename__ = "career_recommendations"
+    
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String, ForeignKey("user_profiles.session_id"), nullable=False)
+    career_title = Column(String, nullable=False)
+    reasoning = Column(Text, nullable=False)     # Why this career was recommended
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationship
+    user = relationship("UserProfile", back_populates="career_recommendations")
+
+class ChatHistory(Base):
+    __tablename__ = "chat_histories"
+    
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String, ForeignKey("user_profiles.session_id"), nullable=False)
+    message = Column(Text, nullable=False)
+    is_user = Column(Boolean, nullable=False)    # True if user message, False if AI
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationship
+    user = relationship("UserProfile", back_populates="chat_messages")
