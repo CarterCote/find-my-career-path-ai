@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 @font-face {
-  font-family: 'CircularStd';
+  font-family: 'circular';
   src: url('/fonts/CircularStd-Book.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
@@ -11,7 +11,7 @@
 }
 
 @font-face {
-  font-family: 'CircularStd';
+  font-family: 'circular';
   src: url('/fonts/CircularStd-Medium.otf') format('opentype');
   font-weight: 500;
   font-style: normal;
@@ -19,11 +19,16 @@
 }
 
 @font-face {
-  font-family: 'CircularStd';
+  font-family: 'circular';
   src: url('/fonts/CircularStd-Bold.otf') format('opentype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
+}
+
+@font-face {
+  font-family: 'planet';
+  src: url('/fonts/ThePlanet.ttf') format('truetype');
 }
 
 :root {
@@ -35,13 +40,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0A0B1A;
+    --background: #0D1127;
     --foreground: #ededed;
   }
+}
+
+p {
+  font-family: var(--font-circular);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: var(--font-circular);
+}
+
+@layer base {
+  p {
+    font-size: 18px;
+  }
 }

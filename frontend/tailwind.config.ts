@@ -11,20 +11,15 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        primaryBlue: "#0D1127",
+        secondaryBlue: "#0C3C60",
+        tertiaryBlue: "#B0D0E8",
+        fadedGold: "#DEC328",
       },
       fontFamily: {
-        sans: [
-          "CircularStd-Book",
-          "CircularStd-Medium",
-          "CircularStd-Bold",
-          "sans-serif"
-        ],
-        circular: [
-          "CircularStd-Book",
-          "CircularStd-Medium",
-          "CircularStd-Bold",
-          "sans-serif"
-        ]
+        sans: ['circular', 'sans-serif'],
+        circular: ['circular', 'sans-serif'],
+        planet: ['planet', 'sans-serif']
       },
     },
   },
