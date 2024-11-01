@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "install-frontend": "cd frontend && npm install --legacy-peer-deps",
-    "build": "cd frontend && npm install --legacy-peer-deps && npm run build"
-  }
+    "install-frontend": "cd frontend && npm install",
+    "build": "cd frontend && npm install && npm run build"
+  },
 }
