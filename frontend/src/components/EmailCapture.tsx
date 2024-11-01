@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/utils/supabase/client'
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { useMediaQuery } from "@/utils/use-media-query";
@@ -34,24 +34,24 @@ type Option = {
 
 const options: Option[] = [
   {
-    value: "is_investor",
-    label: "I'm an investor",
+    value: "is_teacher",
+    label: "I'm a teacher",
   },
   {
-    value: "is_new_builder",
-    label: "I’m new to building ideas",
+    value: "is_high_school_student",
+    label: "I'm a high school student",
   },
   {
-    value: "is_experienced_builder",
-    label: "I've built stuff in the past",
+    value: "is_college_student",
+    label: "I'm a college student",
   },
   {
-    value: "is_partner",
-    label: "I'm a prospective partner",
+    value: "is_early_career",
+    label: "I'm an early-career professional",
   },
   {
-    value: "is_vc_founder",
-    label: "I've raised money",
+    value: "is_school_admin",
+    label: "I'm a school administrator",
   },
 ]
 
@@ -63,9 +63,7 @@ const EmailCapture = () => {
 
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_API_KEY!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = createClient();
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState(false);
@@ -77,6 +75,7 @@ const EmailCapture = () => {
   };
 
   const handleSubmit = async () => {
+    console.log(email);
     if (!validateEmail(email)) {
       setEmailError(true);
       setAlertMessage("We were unable to submit your email address. Please try again.");
@@ -93,7 +92,7 @@ const EmailCapture = () => {
           { email: email }
         ]);
       if (error) throw error;
-      setAlertMessage("Success! You've been added to the Startup Exchange mailing list.");
+      setAlertMessage("Success! You've been added to the Pathways.me mailing list.");
       setAlertVariant("default");
       setIsEmailSubmitted(true);
       setOpen(true);
@@ -153,7 +152,38 @@ const EmailCapture = () => {
   //   }
   // };
 
+  const testConnection = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('emails')
+        .select('*')
+        .limit(1);
+      
+      if (error) {
+        console.error('Connection test failed:', error.message);
+        return false;
+      }
+      
+      console.log('Connection test successful:', data);
+      return true;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      return false;
+    }
+  };
+
+  // Call this in useEffect to test on component mount
+  useEffect(() => {
+    testConnection();
+  }, []);
+
   function ComboBoxResponsive() {
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+      setIsMounted(true);
+    }, []);
+
     const commonProps = {
       onClick: (evt: React.MouseEvent<HTMLButtonElement>) => {
         evt.preventDefault();
@@ -162,6 +192,12 @@ const EmailCapture = () => {
       className: "md:px-6 px-3 md:mb-0 mb-2",
       variant: "secondary" as const,
     };
+
+    if (!isMounted) {
+      return (
+        <Button {...commonProps}>Subscribe for updates</Button>
+      );
+    }
 
     if (isDesktop) {
       return (
@@ -180,7 +216,7 @@ const EmailCapture = () => {
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
           <div className="w-full">
-            <Button {...commonProps}>Get connected</Button>
+            <Button {...commonProps}>Subscribe for updates</Button>
           </div>
         </DrawerTrigger>
         <DrawerContent>

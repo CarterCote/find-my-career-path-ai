@@ -19,18 +19,11 @@ const Header = () => {
             setIsMobile(window.innerWidth < 768);
         };
 
-        const handleKeyPress = (event: KeyboardEvent) => {
-            if (event.key === 'l' || event.key === 'L') {
-                window.location.href = '/login';
-            }
-        };
 
         handleResize();
         window.addEventListener('resize', handleResize);
-        window.addEventListener('keydown', handleKeyPress);
         return () => {
             window.removeEventListener('resize', handleResize);
-            window.removeEventListener('keydown', handleKeyPress);
         };
     }, []);
 
@@ -61,7 +54,7 @@ const Header = () => {
                                 <div className={`${messina_semibold.className} text-[12px] md:text-normal tracking-tight`}>
                                     JOIN THE COMMUNITY
                                 </div>
-                            </Button> */}
+                            </Button>
                             <div className="flex flex-col space-y-4 pt-4">
                                 <Button href="/login " className="bg-transparent border border-zinc-700 hover:bg-zinc-900 rounded-full items-center justify-center flex flex-row opacity-100 hover:opacity-70 transition duration-200 hover:cursor-pointer">
                                     <p className={`tracking-tighter text-sm text-white`}>
@@ -83,7 +76,7 @@ const Header = () => {
                                         </p>
                                     </div>
                                 </div>
-                            </div>
+                            </div> */}
                         </SheetContent>
                     </Sheet>
                 ) : (
