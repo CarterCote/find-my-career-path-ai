@@ -2,6 +2,10 @@
 
 # dependencies
 frontend/node_modules
+backend/src/__pycache__
+backend/src/utils/__pycache__
+**/__pycache__/
+frontend/.next
 /.pnp
 .pnp.*
 .yarn/*

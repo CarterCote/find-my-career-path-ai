@@ -43,3 +43,5 @@ openai>=1.36.1
 pgvector>=0.2.5
 pydantic>=2.7.4
 pydantic-settings>=2.3.4
+llama-index-llms-langchain
+langchain-openai

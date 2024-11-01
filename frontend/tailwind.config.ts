@@ -12,6 +12,20 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
       },
+      fontFamily: {
+        sans: [
+          "CircularStd-Book",
+          "CircularStd-Medium",
+          "CircularStd-Bold",
+          "sans-serif"
+        ],
+        circular: [
+          "CircularStd-Book",
+          "CircularStd-Medium",
+          "CircularStd-Bold",
+          "sans-serif"
+        ]
+      },
     },
   },
   plugins: [],

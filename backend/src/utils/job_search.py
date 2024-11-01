@@ -11,13 +11,15 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage
+from ..crud import create_chat_message
 
 class JobSearchService:
     def __init__(self, retriever, settings):
         self.store = {}
         
-        Settings.llm = ChatOpenAI(
-            temperature=0.1,
+        # Initialize OpenAI chat
+        self.llm = ChatOpenAI(
+            temperature=0.7,  # Increased for more natural conversation
             model_name="gpt-4-turbo-preview",
             api_key=settings.openai_api_key
         )
@@ -98,16 +100,56 @@ class JobSearchService:
             self.store[session_id] = ChatMessageHistory()
         return self.store[session_id]
 
-    def search(self, query: str, session_id: str = "default") -> Dict:
-        chat_history = self.get_session_history(session_id)
-        response = str(self.chat_engine.chat(query))
-        
-        chat_history.add_messages([
-            HumanMessage(content=query),
-            ChatMessage(role=MessageRole.ASSISTANT, content=response)
-        ])
-        
-        return {
-            "response": response,
-            "session_id": session_id
-        }
+    def chat(self, message: str, session_id: str = "default") -> Dict:
+        try:
+            # Create messages list with system prompt and user message
+            messages = [
+                ChatMessage(role=MessageRole.SYSTEM, content=self.system_prompt),
+                ChatMessage(role=MessageRole.USER, content=message)
+            ]
+            
+            # Get response from ChatGPT
+            response = self.llm.chat(messages)
+            
+            return {
+                "response": response.content,
+                "session_id": session_id
+            }
+        except Exception as e:
+            print(f"Error in chat: {str(e)}")  # For debugging
+            return {
+                "response": "I apologize, but I'm having trouble right now. Could you try asking your question again?",
+                "session_id": session_id
+            }
+
+    def search(self, query: str, db: Session, session_id: str = "default") -> Dict:
+        try:
+            # Store user message
+            create_chat_message(db, session_id, query, is_user=True)
+            
+            # Try to get job recommendations
+            try:
+                response = str(self.chat_engine.chat(query))
+            except Exception as e:
+                # If no job postings found or other search error
+                response = """I apologize, but I don't have any specific job recommendations at this time. 
+                However, I can still help answer general career questions or provide guidance about:
+                - Career planning
+                - Resume writing
+                - Interview preparation
+                - Skill development
+                What would you like to know more about?"""
+            
+            # Store assistant response
+            create_chat_message(db, session_id, response, is_user=False)
+            
+            return {
+                "response": response,
+                "session_id": session_id
+            }
+        except Exception as e:
+            return {
+                "response": "I apologize, but I'm having trouble processing your request. Please try again later.",
+                "session_id": session_id,
+                "error": str(e)
+            }

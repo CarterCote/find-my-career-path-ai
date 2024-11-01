@@ -1,6 +1,7 @@
-from sqlalchemy import Column, DateTime, Integer, String, Text, Boolean, JSON, func, ARRAY, ForeignKey
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, Boolean, JSON, func, ARRAY, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 from .database import Base
+from pgvector.sqlalchemy import Vector
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
@@ -51,3 +52,21 @@ class ChatHistory(Base):
 
     # Relationship
     user = relationship("UserProfile", back_populates="chat_messages")
+
+class JobPosting(Base):
+    __tablename__ = "job_postings"
+    
+    id = Column(Integer, primary_key=True)
+    job_id = Column(BigInteger, unique=True)
+    company_name = Column(Text)
+    title = Column(Text)
+    description = Column(Text)
+    max_salary = Column(Float)
+    pay_period = Column(String(50))
+    location = Column(Text)
+    company_id = Column(Float)
+    views = Column(Float)
+    med_salary = Column(Float, nullable=True)
+    min_salary = Column(Float)
+    formatted_work_type = Column(String(50))
+    description_embedding = Column(Vector(dim=768), nullable=True)

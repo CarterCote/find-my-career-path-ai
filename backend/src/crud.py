@@ -12,6 +12,24 @@ def create_user_profile(db: Session, session_id: str):
 def get_user_profile(db: Session, session_id: str):
     return db.query(models.UserProfile).filter(models.UserProfile.session_id == session_id).first()
 
+def create_chat_message(db: Session, session_id: str, message: str, is_user: bool):
+    db_message = models.ChatHistory(
+        session_id=session_id,
+        message=message,
+        is_user=is_user
+    )
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+    return db_message
+
+def get_chat_history(db: Session, session_id: str):
+    return db.query(models.ChatHistory)\
+        .filter(models.ChatHistory.session_id == session_id)\
+        .order_by(models.ChatHistory.created_at.asc())\
+        .all()
+
+
 # def get_user(db: Session, user_id: int):
 #     return db.query(models.User).filter(models.User.id == user_id).first()
 
