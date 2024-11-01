@@ -3,29 +3,10 @@ import Link from 'next/link';
 import { useMediaQuery } from 'react-responsive';
 
 const navItems = [
-  {
-    name: "BUILDER PODS",
-    link: "/community",
-  },
-  {
-    name: "CAMPUSES",
-    link: "/campuses",
-  },
-  {
-    name: "EVENTS",
-    link: "/events",
-  },
-  {
-    name: "DONATE",
-    link: "/",
-  },
-  {
-    name: "RESOURCES",
-    link: "/resources",
-  },
+
   {
     name: "ABOUT",
-    link: "/about",
+    link: "/",
   },
 ];
 

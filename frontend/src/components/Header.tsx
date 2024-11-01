@@ -40,7 +40,7 @@ const Header = () => {
                 <div>
                     <Link href="/">
                         <Image
-                            src={"/logo.png"}
+                            src={"/pathway.png"}
                             alt="SX Full Logo"
                             width={136}
                             height={27}
