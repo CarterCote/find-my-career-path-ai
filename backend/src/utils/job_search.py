@@ -13,7 +13,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage
 from ..crud import create_chat_message
 from ..models import UserProfile
-from ..search_strategies import SearchStrategy
+from .job_retriever import SearchStrategy
+
 import json
 
 class JobSearchService:

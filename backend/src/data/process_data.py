@@ -5,7 +5,14 @@ import csv
 from ai_description_enricher import enrich_job_postings
 import os
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+src_path = Path(__file__).parent.parent
+sys.path.append(str(src_path))
+
 from utils.job_graph import JobGraph
+
 import pickle
 
 def process_data(df: pd.DataFrame, openai_api_key: str = None) -> pd.DataFrame:
@@ -16,26 +23,13 @@ def process_data(df: pd.DataFrame, openai_api_key: str = None) -> pd.DataFrame:
     preprocessor = JobPostingPreprocessor()
     processed_df = preprocessor.preprocess_dataset(df)
     print(f"Basic cleaning complete. Columns: {processed_df.columns.tolist()}")
-    print(openai_api_key)
-    print(openai_api_key)
+    
     # AI enrichment after cleaning if API key provided
     if openai_api_key:
         print("\nStarting AI enrichment phase...")
-        # Process in batches to manage API usage
-        processed_chunks = []
-        for i in range(0, len(processed_df), 100):
-            chunk = processed_df[i:i+100].copy()
-            
-            # Here we'll add:
-            # 1. Generate embeddings for descriptions
-            # 2. Create structured descriptions using OpenAI
-            print(f"\nProcessing batch {i//100 + 1}...")
-
-            enriched_chunk = enrich_job_postings(chunk, openai_api_key)
-            processed_chunks.append(enriched_chunk)
-            print(f"Completed batch {i//100 + 1}")
-        
-        processed_df = pd.concat(processed_chunks, ignore_index=True)
+        # Single batch processing with size 100
+        enriched_df = enrich_job_postings(processed_df, openai_api_key, batch_size=100)
+        processed_df = enriched_df
         print("\nAI enrichment complete!")
         print(f"Final columns: {processed_df.columns.tolist()}")
     

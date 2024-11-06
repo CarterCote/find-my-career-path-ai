@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from enum import Enum
 from .job_graph import JobGraph
-from .models.job_posting import JobPosting
+from ..models import JobPosting
 
 class SearchStrategy(Enum):
     SEMANTIC = "semantic"
