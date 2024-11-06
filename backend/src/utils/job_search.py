@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import Dict
+from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from llama_index.core import Settings, PromptTemplate
 from llama_index.core.chat_engine import CondenseQuestionChatEngine
@@ -202,4 +202,45 @@ class JobSearchService:
                 "response": "I apologize, but I'm having trouble processing your request.",
                 "session_id": session_id,
                 "error": str(e)
+            }
+
+    def filtered_search(
+        self,
+        min_salary: Optional[float] = None,
+        required_skills: Optional[List[str]] = None,
+        work_environment: Optional[str] = None,
+        experience_years: Optional[int] = None,
+        education_level: Optional[str] = None
+    ) -> Dict:
+        """Search jobs with structured filters from the enriched data"""
+        try:
+            # Create filter dict for the retriever
+            filters = {
+                'min_salary': min_salary,
+                'required_skills': required_skills,
+                'work_environment': work_environment,
+                'experience_years': experience_years,
+                'education_level': education_level
+            }
+            
+            # Use semantic search with filters
+            self.retriever.strategy = SearchStrategy.SEMANTIC
+            results = self.retriever.search_jobs(
+                query="",  # Empty query since we're filtering
+                filters=filters
+            )
+            
+            # Format results
+            formatted_results = self._format_results(results)
+            
+            return {
+                "jobs": formatted_results,
+                "filters_applied": {k: v for k, v in filters.items() if v is not None}
+            }
+            
+        except Exception as e:
+            print(f"Error in filtered search: {str(e)}")
+            return {
+                "error": str(e),
+                "jobs": []
             }
