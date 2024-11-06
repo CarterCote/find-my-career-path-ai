@@ -1,119 +1,67 @@
 from typing import List, Dict
 import pandas as pd
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from transformers import AutoTokenizer
-import re
 
 class JobPostingPreprocessor:
     def __init__(self):
-        # Download all required NLTK data
-        try:
-            nltk.download('punkt')
-            nltk.download('punkt_tab')
-            nltk.download('stopwords')
-            nltk.download('averaged_perceptron_tagger')
-            nltk.download('maxent_ne_chunker')
-            nltk.download('words')
-        except Exception as e:
-            print(f"Error downloading NLTK data: {e}")
-            
-        self.stop_words = set(stopwords.words('english'))
-        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        pass
         
     def preprocess_dataset(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Preprocess the entire dataset
+        Preprocess the dataset by selecting and cleaning specific columns
         """
-        # Create copy to avoid modifying original
-        processed_df = df.copy()
+        # Define base columns (from raw data)
+        base_columns = [
+            'job_id',
+            'company_name',
+            'title',
+            'description',
+            'max_salary',
+            'pay_period',
+            'location',
+            'company_id',
+            'views',
+            'med_salary',
+            'min_salary',
+            'description_embedding',
+            'structured_description'
+        ]
         
-        # Clean text columns
-        text_columns = ['title', 'description', 'skills_desc']
-        for col in text_columns:
-            if col in processed_df.columns:
-                processed_df[f'processed_{col}'] = processed_df[col].apply(self.preprocess_text)
+        # Create copy with base columns that exist in raw data
+        raw_columns = base_columns[:-2]  # Exclude AI columns
+        processed_df = df[raw_columns].copy()
         
-        # Categorize job titles
-        processed_df['job_category'] = processed_df['title'].apply(self.categorize_job)
+        # Add AI enrichment columns in correct order
+        processed_df['description_embedding'] = None
+        processed_df['structured_description'] = None
         
-        # Process salary and numeric information
-        numeric_cols = ['min_salary', 'med_salary', 'max_salary', 'closed_time', 'formatted_experience_level']
-        for col in numeric_cols:
-            if col in processed_df.columns:
-                # Convert to numeric, replacing invalid values with None/NaN
-                processed_df[col] = pd.to_numeric(
-                    processed_df[col].apply(
-                        lambda x: str(x).replace(',', '').strip() if pd.notna(x) else None
-                    ), 
-                    errors='coerce'
-                )
-                # Replace NaN with None (which will become NULL in SQL)
-                processed_df[col] = processed_df[col].where(pd.notna(processed_df[col]), None)
+        # Clean location data
+        processed_df['location'] = processed_df['location'].fillna('Unknown')
+        processed_df['location'] = processed_df['location'].str.strip().str.replace('"', '')
         
-        # Process location data
-        if 'location' in processed_df.columns:
-            processed_df['processed_location'] = processed_df['location'].apply(
-                lambda x: x.strip('"\'') if pd.notna(x) else 'Unknown'
-            )
-            # Remove any internal quotes that might cause SQL issues
-            processed_df['processed_location'] = processed_df['processed_location'].str.replace('"', '')
+        # Process salary columns - ensure they're clean numbers
+        salary_cols = ['min_salary', 'med_salary', 'max_salary']
+        for col in salary_cols:
+            processed_df[col] = pd.to_numeric(
+                processed_df[col].astype(str).str.replace(',', ''),
+                errors='coerce'
+            ).fillna(0)
         
-        # Process work type
-        if 'formatted_work_type' in processed_df.columns:
-            processed_df['processed_work_type'] = processed_df['formatted_work_type'].fillna('Unknown')
+        # Clean company_id - ensure it's numeric
+        processed_df['company_id'] = pd.to_numeric(processed_df['company_id'], errors='coerce').fillna(0)
         
-        # Convert remote_allowed from float to int, filling NA values with 0
-        if 'remote_allowed' in processed_df.columns:
-            processed_df['remote_allowed'] = processed_df['remote_allowed'].fillna(0).astype(int)
-            
+        # Convert views to integer
+        processed_df['views'] = pd.to_numeric(processed_df['views'], errors='coerce').fillna(0).astype(int)
+        
+        # Clean text fields
+        text_cols = ['job_id', 'company_name', 'title', 'description', 'pay_period']
+        for col in text_cols:
+            processed_df[col] = processed_df[col].fillna('')
+            processed_df[col] = processed_df[col].str.strip()
+        
+        # Update columns_to_keep for verification
+        columns_to_keep = base_columns + ['description_embedding', 'structured_description']
+        
+        # Final verification that we only have the columns we want
+        assert set(processed_df.columns) == set(columns_to_keep), "Extra columns found in processed dataframe"
+        
         return processed_df
-    
-    def preprocess_text(self, text: str) -> str:
-        """
-        Clean and normalize text
-        """
-        if pd.isna(text):
-            return ""
-            
-        # Convert to lowercase
-        text = text.lower()
-        
-        # Remove special characters
-        text = re.sub(r'[^\w\s]', ' ', text)
-        
-        # Remove extra whitespace
-        text = ' '.join(text.split())
-        
-        # Tokenize and remove stopwords
-        tokens = word_tokenize(text)
-        tokens = [token for token in tokens if token not in self.stop_words]
-        
-        return ' '.join(tokens)
-    
-    def categorize_job(self, title: str) -> str:
-        """
-        Categorize job titles
-        """
-        if pd.isna(title):
-            return 'unknown'
-            
-        title_lower = title.lower()
-        
-        categories = {
-            'engineering': ['engineer', 'developer', 'programmer', 'architect', 'devops'],
-            'data_science': ['data scientist', 'machine learning', 'ai', 'analytics', 'data engineer'],
-            'management': ['manager', 'director', 'lead', 'head', 'chief'],
-            'design': ['designer', 'ux', 'ui', 'graphic'],
-            'marketing': ['marketing', 'seo', 'content', 'social media'],
-            'sales': ['sales', 'account executive', 'business development'],
-            'finance': ['financial', 'accountant', 'analyst'],
-            'hr': ['hr', 'human resources', 'recruiter', 'talent']
-        }
-        
-        for category, keywords in categories.items():
-            if any(keyword in title_lower for keyword in keywords):
-                return category
-                
-        return 'other'

@@ -1,6 +1,6 @@
 from fastapi import Depends, FastAPI
 from .utils.job_search import JobSearchService
-from .utils.job_retriever import JobSearchRetriever
+from .utils.job_retriever import JobSearchRetriever, SearchStrategy
 from .config import Settings
 from sqlalchemy.orm import Session
 from . import crud, models
@@ -17,7 +17,10 @@ LlamaSettings.embed_model = OpenAIEmbedding()
 
 # Initialize components with database session
 db = SessionLocal()
-retriever = JobSearchRetriever(db=db, embed_model=LlamaSettings.embed_model)
+retriever = JobSearchRetriever(db, embed_model=LlamaSettings.embed_model, strategy=SearchStrategy.SEMANTIC)
+# retriever = JobSearchRetriever(db, embed_model=LlamaSettings.embed_model, strategy=SearchStrategy.SPARSE)
+# retriever = JobSearchRetriever(db, embed_model=LlamaSettings.embed_model, strategy=SearchStrategy.HYBRID)
+
 search_service = JobSearchService(retriever=retriever, settings=settings)
 
 @app.post("/search/jobs")

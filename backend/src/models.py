@@ -54,19 +54,18 @@ class ChatHistory(Base):
     user = relationship("UserProfile", back_populates="chat_messages")
 
 class JobPosting(Base):
-    __tablename__ = "job_postings"
+    __tablename__ = "postings"
     
-    id = Column(Integer, primary_key=True)
-    job_id = Column(BigInteger, unique=True)
-    company_name = Column(Text)
-    title = Column(Text)
+    job_id = Column(String(255), primary_key=True)
+    company_name = Column(String(255))
+    title = Column(String(255))
     description = Column(Text)
-    max_salary = Column(Float)
+    max_salary = Column(Float(2))
     pay_period = Column(String(50))
-    location = Column(Text)
-    company_id = Column(Float)
-    views = Column(Float)
-    med_salary = Column(Float, nullable=True)
-    min_salary = Column(Float)
-    formatted_work_type = Column(String(50))
+    location = Column(String(255))
+    company_id = Column(String(255))
+    views = Column(Integer)
+    med_salary = Column(Float(2))
+    min_salary = Column(Float(2))
     description_embedding = Column(Vector(dim=768), nullable=True)
+    structured_description = Column(JSON, nullable=True)

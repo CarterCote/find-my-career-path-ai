@@ -12,9 +12,14 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage
 from ..crud import create_chat_message
+from ..models import UserProfile
+from ..search_strategies import SearchStrategy
+import json
 
 class JobSearchService:
     def __init__(self, retriever, settings):
+        self.retriever = retriever
+
         self.store = {}
         
         # Initialize OpenAI chat
@@ -124,32 +129,76 @@ class JobSearchService:
 
     def search(self, query: str, db: Session, session_id: str = "default") -> Dict:
         try:
-            # Store user message
+            # Get or create chat history
+            history = self.get_session_history(session_id)
+            
+            # Store user message in both memory and database
+            history.add_user_message(query)
             create_chat_message(db, session_id, query, is_user=True)
             
-            # Try to get job recommendations
-            try:
-                response = str(self.chat_engine.chat(query))
-            except Exception as e:
-                # If no job postings found or other search error
-                response = """I apologize, but I don't have any specific job recommendations at this time. 
-                However, I can still help answer general career questions or provide guidance about:
-                - Career planning
-                - Resume writing
-                - Interview preparation
-                - Skill development
-                What would you like to know more about?"""
+            # Get job recommendations using graph-enhanced search
+            self.retriever.strategy = SearchStrategy.GRAPH
+            results = self.retriever.search_jobs(query)
+            related_titles = self._get_related_titles(query)
             
-            # Store assistant response
-            create_chat_message(db, session_id, response, is_user=False)
+            # Format results for the LLM
+            formatted_results = self._format_results(results)
+            
+            # Get user profile for personalization
+            user_profile = db.query(UserProfile).filter(
+                UserProfile.session_id == session_id
+            ).first()
+            
+            # Include user preferences in the prompt if available
+            user_context = ""
+            if user_profile:
+                user_context = f"""
+                User Preferences:
+                - Skills: {', '.join(user_profile.skills or [])}
+                - Values: {', '.join(user_profile.core_values or [])}
+                - Work Culture: {', '.join(user_profile.work_culture or [])}
+                - Goals: {user_profile.goals}
+                """
+            
+            # Create the message for the LLM with user context
+            messages = [
+                SystemMessage(content=self.system_prompt),
+                *[ChatMessage(content=m.content, role=m.role) for m in history.messages[-5:]],  # Last 5 messages
+                HumanMessage(content=f"""
+                User Context: {user_context}
+                
+                Current Query: {query}
+                
+                Found Jobs: {json.dumps(formatted_results, indent=2)}
+                
+                Related Titles: {', '.join(related_titles)}
+                
+                Please provide a personalized response that:
+                1. Addresses their search requirements
+                2. Highlights the most relevant jobs based on their preferences
+                3. Suggests related titles they might be interested in
+                4. Provides relevant career advice
+                """)
+            ]
+            
+            # Get response from LLM
+            response = self.llm(messages)
+            
+            # Store assistant response in both memory and database
+            history.add_ai_message(response.content)
+            create_chat_message(db, session_id, response.content, is_user=False)
             
             return {
-                "response": response,
-                "session_id": session_id
+                "response": response.content,
+                "session_id": session_id,
+                "jobs": formatted_results,
+                "related_titles": related_titles
             }
+            
         except Exception as e:
+            print(f"Error in search: {str(e)}")
             return {
-                "response": "I apologize, but I'm having trouble processing your request. Please try again later.",
+                "response": "I apologize, but I'm having trouble processing your request.",
                 "session_id": session_id,
                 "error": str(e)
             }
