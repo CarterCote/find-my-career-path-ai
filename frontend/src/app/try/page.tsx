@@ -21,7 +21,24 @@ export default function Home() {
     "organize", "manage finances"
   ]);
 
+const [workCulture, setWorkCulture] = useState([
+  "inspiring", "fast-paced", "growth potential", "ethical leadership",
+  "collaboration", "entrepreneurial", "innovation", "professional development",
+  "engaging work", "geographical location", "flexibility", "service focus",
+  "respect", "workplace surroundings", "fairness", "supportive environment",
+  "transparency", "mentoring", "variety", "travel", "challenging",
+  "predictability", "humor", "inclusive workplace", "salary", "fun",
+  "stability", "recognition", "structure", "life balance", "competition"
+]);
 
+const [coreValues, setCoreValues] = useState([
+  "integrity", "personal development", "family/friends", "fulfilling one's potential",
+  "authenticity", "impact", "creativity", "excellence", "intellectual challenge",
+  "success", "achievement", "community", "gratitude", "learning", "social justice",
+  "autonomy", "compassion", "relationships", "safety", "diversity", "joy",
+  "belonging", "environmental responsibility", "adventure", "helping", "prestige",
+  "harmony", "spirituality", "trust", "well-being", "simplicity"
+]);
 
   const handleNext = () => {
     setCurrentStep(prev => prev + 1);
@@ -140,8 +157,28 @@ export default function Home() {
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-              <p className="font-circular font-bold text-4xl tracking-tight">Core Values</p>
-              <div className="flex flex-row items-center w-full justify-between">
+              <p className="font-circular font-bold text-4xl tracking-tight mb-8">Work Culture</p>
+              <SkillsGrid skills={workCulture} />
+              <div className="flex flex-row items-center w-full justify-between mt-8">
+                <Button variant="secondary" onClick={handleBack}>Back</Button>
+                <Button variant="secondary" onClick={handleNext}>Next</Button>
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 5 && (
+            <motion.div
+              key="step4"
+              className="w-1/3 mx-auto flex-col justify-center space-y-6 items-start py-24"
+              variants={fadeVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+            >
+              <p className="font-circular font-bold text-4xl tracking-tight mb-8">Core Values</p>
+              <SkillsGrid skills={coreValues} />
+              <div className="flex flex-row items-center w-full justify-between mt-8">
                 <Button variant="secondary" onClick={handleBack}>Back</Button>
                 <Button variant="secondary" onClick={handleNext}>Next</Button>
               </div>

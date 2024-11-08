@@ -65,11 +65,12 @@ body {
   .tile {
     display: block;
     position: absolute;
-    background-color: #98fb98;
+    background-color: #E5F3FF;
     color: #3A3A4D;
     padding: 5px;
     font-weight: bold;
     cursor: move;
     user-select: none;
+    border-radius: 1rem;
   }
 }

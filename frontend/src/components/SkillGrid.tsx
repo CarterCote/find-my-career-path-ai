@@ -36,8 +36,8 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
   const lastXRef = useRef(0);
 
   // Grid options
-  const rowSize = 150;
-  const colSize = 150;
+  const rowSize = 100;
+  const colSize = 100;
   const gutter = 10;
   const threshold = "50%";
   const fixedSize = false;
@@ -50,6 +50,8 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
 
   const shadow1 = "0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px 0 rgba(0, 0, 0, 0.6)";
   const shadow2 = "0 6px 10px 0 rgba(0, 0, 0, 0.3), 0 2px 2px 0 rgba(0, 0, 0, 0.2)";
+
+  const MAX_ROWS = 4;
 
   const changePosition = (from: number, to: number, rowToUpdate = -1) => {
     if (!listRef.current) return;
@@ -85,16 +87,16 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
     
     const resize = () => {
       if (!listRef.current) return;
-      colCount = oneColumn ? 1 : Math.floor(listRef.current.offsetWidth / (colSize + gutter));
-      gutterStep = colCount == 1 ? gutter : (gutter * (colCount - 1) / colCount);
-      rowCount = 0;
+      const containerWidth = listRef.current.offsetWidth - 32; // Account for padding
+      // Calculate how many columns can fit in the container width
+      colCount = Math.floor((containerWidth + gutter) / (colSize + gutter));
       layoutInvalidated();
     };
 
     const createTile = (skill: string) => {
       const colspan = 1;
       const element = document.createElement('div');
-      element.className = 'tile bg-green-500 absolute p-4 font-bold text-gray-800 flex items-center justify-center text-center';
+      element.className = 'tile bg-tertiaryBlue absolute p-4 font-bold text-gray-800 leading-[100%] text-sm flex items-center justify-center text-center';
       element.style.width = `${colSize}px`;
       element.style.height = `${rowSize}px`;
       element.innerHTML = skill;
@@ -127,68 +129,73 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
         type: 'x,y',
         onDrag: function(this: any) {
           const tile = (this.target as any).tile;
-          const currentIndex = Array.from(listRef.current?.children || []).indexOf(this.target);
           const dragBounds = this.target.getBoundingClientRect();
           
-          // Find tiles that are close to the dragged tile
-          const closeTiles = Array.from(listRef.current?.children || [])
+          const listElement = listRef.current;
+          if (!listElement) return;
+          
+          // Determine which row we're hovering over
+          const currentY = dragBounds.top - listElement.getBoundingClientRect().top;
+          const hoveringRow = Math.min(Math.max(Math.floor(currentY / (rowSize + gutter)), 0), MAX_ROWS - 1);
+          
+          // Find tiles in the same row
+          const tilesInRow = Array.from(listElement.children)
             .filter(child => {
               if (child === this.target) return false;
               const box = child.getBoundingClientRect();
-              // Only consider tiles within one row distance
-              const verticalDistance = Math.abs(box.top - dragBounds.top);
-              return verticalDistance <= rowSize * 1.5; // Allow some buffer for dragging between rows
-            })
+              const childY = box.top - listElement.getBoundingClientRect().top;
+              const childRow = Math.floor(childY / (rowSize + gutter));
+              return childRow === hoveringRow;
+            });
+          
+          // Find closest tile in row based on horizontal position
+          const closestTile = tilesInRow
             .map(child => {
               const box = child.getBoundingClientRect();
-              const distance = Math.hypot(
-                box.left + box.width/2 - (dragBounds.left + dragBounds.width/2),
-                box.top + box.height/2 - (dragBounds.top + dragBounds.height/2)
-              );
+              const distance = Math.abs(box.left - dragBounds.left);
               return { element: child, distance };
             })
-            .sort((a, b) => a.distance - b.distance);
+            .sort((a, b) => a.distance - b.distance)[0];
           
-          if (closeTiles.length > 0) {
-            const closest = closeTiles[0];
-            const newIndex = Array.from(listRef.current?.children || []).indexOf(closest.element);
+          if (closestTile) {
+            const currentIndex = Array.from(listElement.children).indexOf(this.target);
+            const newIndex = Array.from(listElement.children).indexOf(closestTile.element);
+            
+            // Only swap if we're in the target row
             if (currentIndex !== newIndex) {
-              changePosition(currentIndex, newIndex);
+              changePosition(currentIndex, newIndex, hoveringRow);
             }
           }
           
-          tile.inBounds = this.hitTest(listRef.current, 0);
+          tile.inBounds = this.hitTest(listElement, 0);
           Object.assign(tile, {
             x: this.x,
             y: this.y
-          });
-        },
-        onPress: function(this: any) {
-          const tile = (this.target as any).tile;
-          tile.isDragging = true;
-          tile.lastIndex = tile.index;
-
-          gsap.to(this.target, {
-            duration: 0.2,
-            opacity: 0.75,
-            boxShadow: shadow2,
-            scale: 0.95,
-            zIndex: '+=1000'
           });
         },
         onRelease: function(this: any) {
           const tile = (this.target as any).tile;
           tile.isDragging = false;
 
-          // Calculate the proper grid position
-          const col = Math.round(this.x / (colSize + gutter));
-          const row = Math.round(this.y / (rowSize + gutter));
+          if (!listRef.current) return;
           
-          // Force snap to grid
-          const xPos = col * (colSize + gutter);
-          const yPos = row * (rowSize + gutter);
+          // Determine final row position
+          const currentY = this.y;
+          const finalRow = Math.min(Math.max(Math.floor(currentY / (rowSize + gutter)), 0), MAX_ROWS - 1);
+          
+          // Get current index and calculate new position
+          const currentIndex = Array.from(listRef.current.children).indexOf(this.target);
+          
+          // Calculate the nearest column position based on x coordinate
+          const nearestCol = Math.min(
+            Math.max(Math.round(this.x / (colSize + gutter)), 0),
+            colCount - 1
+          );
+          
+          // Calculate exact grid position
+          const xPos = nearestCol * (colSize + gutter);
+          const yPos = finalRow * (rowSize + gutter);
 
-          // Animate to the nearest grid position
           gsap.to(this.target, {
             duration: 0.2,
             opacity: 1,
@@ -198,8 +205,7 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
             y: yPos,
             zIndex: ++zIndex,
             onComplete: () => {
-              // Ensure final layout is correct
-              layoutInvalidated();
+              layoutInvalidated(finalRow);
             }
           });
         }
@@ -220,69 +226,45 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
     if (!listRef.current) return;
     
     const timeline = gsap.timeline();
-    
-    // Calculate available width and number of columns
-    const containerWidth = listRef.current.offsetWidth;
-    colCount = Math.floor((containerWidth + gutter) / (colSize + gutter));
-    
     const tileElements = Array.from(listRef.current.getElementsByClassName('tile'));
     
-    let col = 0;
-    let row = 0;
-
+    // Calculate positions based on container width
     tileElements.forEach((element, index) => {
       const tile = (element as any).tile;
-      
-      if (tile.isDragging) return; // Skip dragging tiles
-      
-      // Calculate grid position
-      if (col >= colCount) {
-        col = 0;
-        row++;
-      }
+      if (tile.isDragging) return;
 
-      // Force exact grid coordinates
+      // Calculate row and column based on index
+      const row = Math.min(Math.floor(index / colCount), MAX_ROWS - 1);
+      const col = index % colCount;
+      
+      // Calculate exact pixel positions
       const xPos = col * (colSize + gutter);
       const yPos = row * (rowSize + gutter);
-
-      // Update tile properties
+      
       Object.assign(tile, {
         col: col,
         row: row,
-        index: index,
         x: xPos,
         y: yPos,
-        width: colSize,
-        height: rowSize,
         positioned: true
       });
-
-      // Animate to exact position
+      
       timeline.to(element, 0.3, {
         x: xPos,
         y: yPos,
         ease: "power2.out",
         immediateRender: true
       }, "reflow");
-
-      col++;
     });
-
-    // Update container height
-    const totalRows = Math.ceil(tileElements.length / colCount);
-    const newHeight = totalRows * rowSize + (totalRows - 1) * gutter;
-    timeline.to(listRef.current, 0.2, { height: newHeight }, "reflow");
   };
 
   return (
     <div 
       ref={listRef}
-      className="relative bg-gray-800/20 w-full min-h-[400px] p-4 rounded-lg"
+      className="relative bg-gray-800/20 w-full rounded-lg p-4"
       style={{ 
-        display: 'grid',
-        gap: `${gutter}px`,
-        gridTemplateColumns: `repeat(auto-fill, ${colSize}px)`,
-        gridAutoRows: `${rowSize}px`
+        height: `${(MAX_ROWS * rowSize) + ((MAX_ROWS - 1) * gutter) + 32}px`,
+        position: 'relative'
       }}
     />
   );
