@@ -60,3 +60,16 @@ body {
     font-size: 18px;
   }
 }
+
+@layer components {
+  .tile {
+    display: block;
+    position: absolute;
+    background-color: #98fb98;
+    color: #3A3A4D;
+    padding: 5px;
+    font-weight: bold;
+    cursor: move;
+    user-select: none;
+  }
+}

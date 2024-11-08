@@ -1,13 +1,27 @@
 'use client';
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import EmailCapture from "@/components/EmailCapture";
 import Header from "@/components/Header";
+import SkillsGrid from "@/components/SkillGrid";
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState(0);
+  const [skills, setSkills] = useState([
+    "build", "design/create", "customer/client focus", "persuade/sell", 
+    "programming", "solve complex problems", "think critically", 
+    "technical expertise", "strategic planning", "adaptability",
+    "make decisions", "work in teams", "lead", "manage and develop others",
+    "build relationships", "global mindset", "storytelling", "empathy",
+    "interpret data", "quantitative", "communicate verbally", 
+    "project management", "develop curriculum", "analyze", "research",
+    "write", "teach", "social media", "make presentations", 
+    "organize", "manage finances"
+  ]);
+
+
 
   const handleNext = () => {
     setCurrentStep(prev => prev + 1);
@@ -100,35 +114,19 @@ export default function Home() {
 
           {currentStep === 3 && (
             <motion.div
-              key="step3"
-              className="mx-auto flex-col justify-center space-y-6 items-start py-24"
+              className="mx-auto flex-col justify-center space-y-6 items-start py-24 w-[80%]"
               variants={fadeVariants}
               initial="initial"
               animate="animate"
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-                <div className="w-1/3">
-                    <p className="font-circular font-bold text-4xl tracking-tight">Skills</p>
-                    <div className="flex flex-col space-y-4">
-                        <p>Guiding Question: What skills would I like to be using most at work?</p>
-                        <p>Action: Sort the skills cards according to the level of enjoyment for you. Don’t worry about your skill level.</p>
-                    </div>
-                    <div className="flex flex-row items-center w-full justify-between">
-                        <Button variant="secondary" onClick={handleBack}>Back</Button>
-                        <Button variant="secondary" onClick={handleNext}>Next</Button>
-                    </div>
-                </div>
-                <div className="w-2/3">
-                    <div className="flex flex-col space-y-4">
-                        <p>Guiding Question: What skills would I like to be using most at work?</p>
-                        <p>Action: Sort the skills cards according to the level of enjoyment for you. Don’t worry about your skill level.</p>
-                    </div>
-                    <div className="flex flex-row items-center w-full justify-between">
-                        <Button variant="secondary" onClick={handleBack}>Back</Button>
-                        <Button variant="secondary" onClick={handleNext}>Next</Button>
-                    </div>
-                </div>
+              <p className="font-circular font-bold text-4xl tracking-tight mb-8">Skills</p>
+              <SkillsGrid skills={skills} />
+              <div className="flex flex-row items-center w-full justify-between mt-8">
+                <Button variant="secondary" onClick={handleBack}>Back</Button>
+                <Button variant="secondary" onClick={handleNext}>Next</Button>
+              </div>
             </motion.div>
           )}
 
