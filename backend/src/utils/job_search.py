@@ -244,3 +244,54 @@ class JobSearchService:
                 "error": str(e),
                 "jobs": []
             }
+
+    def verify_and_rank_results(self, results: List[Dict], user_profile: UserProfile) -> List[Dict]:
+        """Verify and rank job recommendations based on user profile"""
+        verified_results = []
+        
+        for job in results:
+            structured_desc = job.get('structured_description', {})
+            
+            # Calculate various match scores
+            skill_match = self._calculate_skill_match(
+                user_profile.skills,
+                structured_desc.get('required_skills', [])
+            )
+            
+            # Add verification data
+            job['match_data'] = {
+                'skill_match': skill_match,
+                'skill_level': self._determine_skill_level(structured_desc),
+                'recommended_skills': self._get_skill_gaps(
+                    user_profile.skills,
+                    structured_desc.get('required_skills', [])
+                )
+            }
+            
+            verified_results.append(job)
+        
+        # Sort by match score
+        return sorted(verified_results, key=lambda x: x['match_data']['skill_match'], reverse=True)
+
+    def _calculate_skill_match(self, user_skills: List[str], required_skills: List[str]) -> float:
+        """Calculate match score between user skills and job requirements"""
+        if not user_skills or not required_skills:
+            return 0.0
+            
+        # Convert to sets for comparison
+        user_set = {skill.lower() for skill in user_skills}
+        required_set = {skill.lower() for skill in required_skills}
+        
+        # Calculate direct matches
+        direct_matches = len(user_set.intersection(required_set))
+        
+        # Calculate semantic similarity for non-exact matches
+        semantic_matches = 0
+        for user_skill in user_set:
+            if user_skill not in required_set:
+                # Use embedding similarity to find related skills
+                similarity = self._get_skill_similarity(user_skill, required_set)
+                semantic_matches += similarity
+        
+        total_score = (direct_matches + semantic_matches) / len(required_set)
+        return min(1.0, total_score)  # Normalize to 0-1

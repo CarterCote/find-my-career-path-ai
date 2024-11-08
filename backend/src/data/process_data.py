@@ -105,5 +105,75 @@ def main():
         print(f"Error during processing: {str(e)}")
         raise
 
+def main_sample(sample_size: int = 10000):
+    """Process a sample of the data for testing purposes"""
+    # Load environment variables at the start
+    load_dotenv(Path('backend/.env'))
+    
+    try:
+        # Setup paths
+        data_dir = Path('backend/data')
+        raw_dir = data_dir / 'raw'
+        processed_dir = data_dir / 'processed'
+        processed_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load raw data (limited to sample_size)
+        print(f"\nLoading first {sample_size} records from raw data...")
+        df = pd.read_csv(
+            raw_dir / 'postings.csv',
+            escapechar='\\',
+            quoting=csv.QUOTE_MINIMAL,
+            encoding='utf-8',
+            on_bad_lines='skip',
+            low_memory=False,
+            nrows=sample_size,
+            dtype=str
+        )
+        print(f"Loaded {len(df)} records")
+        
+        # Add debugging information
+        print("\nColumn types after loading:")
+        print(df.dtypes)
+        print("\nSample of problematic data:")
+        for col in df.columns:
+            null_count = df[col].isna().sum()
+            if null_count > 0:
+                print(f"\nColumn '{col}' has {null_count} null values")
+                print("First few non-null values:", df[col].dropna().head().tolist())
+        
+        # Rest of the processing remains the same as main()
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not found in environment variables!")
+        print("OpenAI API key loaded successfully")
+        
+        # Process data with API key
+        processed_df = process_data(df, openai_api_key=openai_api_key)
+        
+        # Save processed data with a different name to distinguish it
+        output_path = processed_dir / 'processed_jobs_sample.csv'
+        print("\nSaving processed sample data...")
+        processed_df.to_csv(
+            output_path,
+            index=False,
+            quoting=csv.QUOTE_ALL,
+            doublequote=True,
+            escapechar=None,
+            lineterminator='\n',
+            encoding='utf-8'
+        )
+        
+        # Verification steps remain the same...
+        print("\nVerifying output file...")
+        test_df = pd.read_csv(output_path, quoting=csv.QUOTE_ALL)
+        print(f"Verification successful: {len(test_df)} records")
+        
+    except Exception as e:
+        print(f"Error during processing: {str(e)}")
+        raise
+
 if __name__ == "__main__":
-    main()
+    # You can choose which function to run
+    # main()
+    # Or uncomment the following line to run the sample version:
+    main_sample()
