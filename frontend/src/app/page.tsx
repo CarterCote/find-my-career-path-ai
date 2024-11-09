@@ -36,11 +36,11 @@ export default function Home() {
           </div>
           <div className="flex flex-col space-y-8 w-full">
             <div className="flex flex-col space-y-6">
-              <p>Using AI, FindYourCareerPath transforms a user's skills, values, and interests into tailored career pathway recommendations, drawing on real-world examples from individuals with similar backgrounds who are actively pursuing those paths. </p>
+              <p>Using AI, Pathways transforms a user's skills, values, and interests into tailored career pathway recommendations, drawing on real-world examples from individuals with similar backgrounds who are actively pursuing those paths. </p>
               
               <p>The system then fine-tunes these recommendations to reflect the user’s unique preferences, prioritizing the most relevant options.</p>
               
-              <p>As users engage with the suggestions and provide feedback, FindYourCareerPath adapts by learning from this input, continuously refining its recommendations to support the user’s career journey as it evolves.</p>
+              <p>As users engage with the suggestions and provide feedback, Pathways adapts by learning from this input, continuously refining its recommendations to support the user’s career journey as it evolves.</p>
             </div>
 
             <div className="flex gap-4">

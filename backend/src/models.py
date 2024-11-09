@@ -10,9 +10,9 @@ class UserProfile(Base):
     session_id = Column(String, nullable=False, unique=True)
     
     # Structured preferences
-    core_values = Column(ARRAY(String))      # Top 3 core values
-    work_culture = Column(ARRAY(String))     # Top 3 work culture preferences
-    skills = Column(ARRAY(String))           # Top 3 skills
+    core_values = Column(ARRAY(String))      # Top 10 core values
+    work_culture = Column(ARRAY(String))     # Top 10 work culture preferences
+    skills = Column(ARRAY(String))           # Top 10 skills
     top_six = Column(ARRAY(String))          # Top 6 overall preferences
     
     # Rankings/scores (optional)

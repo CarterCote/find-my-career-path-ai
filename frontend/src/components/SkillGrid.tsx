@@ -26,9 +26,10 @@ interface Tile {
 
 interface SkillsGridProps {
   skills: string[];
+  onHighPrioritySkillsChange?: (skills: string[]) => void;
 }
 
-export default function SkillsGrid({ skills }: SkillsGridProps) {
+export default function SkillsGrid({ skills, onHighPrioritySkillsChange }: SkillsGridProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [tiles, setTiles] = useState<HTMLElement[]>([]);
   
@@ -38,7 +39,7 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
   // Grid options
   const rowSize = 100;
   const colSize = 100;
-  const gutter = 10;
+  const gutter = 12;
   const threshold = "50%";
   const fixedSize = false;
   const oneColumn = false;
@@ -85,10 +86,15 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
   useEffect(() => {
     if (!listRef.current) return;
     
+    // Clear existing tiles
+    while (listRef.current.firstChild) {
+      listRef.current.removeChild(listRef.current.firstChild);
+    }
+    setTiles([]);
+
     const resize = () => {
       if (!listRef.current) return;
-      const containerWidth = listRef.current.offsetWidth - 32; // Account for padding
-      // Calculate how many columns can fit in the container width
+      const containerWidth = listRef.current.offsetWidth - 32;
       colCount = Math.floor((containerWidth + gutter) / (colSize + gutter));
       layoutInvalidated();
     };
@@ -131,25 +137,18 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
           const tile = (this.target as any).tile;
           const dragBounds = this.target.getBoundingClientRect();
           
-          const listElement = listRef.current;
-          if (!listElement) return;
+          if (!listRef.current) return;
           
           // Determine which row we're hovering over
-          const currentY = dragBounds.top - listElement.getBoundingClientRect().top;
+          const currentY = dragBounds.top - listRef.current.getBoundingClientRect().top;
           const hoveringRow = Math.min(Math.max(Math.floor(currentY / (rowSize + gutter)), 0), MAX_ROWS - 1);
           
-          // Find tiles in the same row
-          const tilesInRow = Array.from(listElement.children)
-            .filter(child => {
-              if (child === this.target) return false;
-              const box = child.getBoundingClientRect();
-              const childY = box.top - listElement.getBoundingClientRect().top;
-              const childRow = Math.floor(childY / (rowSize + gutter));
-              return childRow === hoveringRow;
-            });
+          // Only look at tiles in the current hovering row
+          const tilesInRow = getItemsInRow(hoveringRow);
           
           // Find closest tile in row based on horizontal position
           const closestTile = tilesInRow
+            .filter(child => child !== this.target)
             .map(child => {
               const box = child.getBoundingClientRect();
               const distance = Math.abs(box.left - dragBounds.left);
@@ -158,16 +157,16 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
             .sort((a, b) => a.distance - b.distance)[0];
           
           if (closestTile) {
-            const currentIndex = Array.from(listElement.children).indexOf(this.target);
-            const newIndex = Array.from(listElement.children).indexOf(closestTile.element);
+            const currentIndex = tilesInRow.indexOf(this.target);
+            const newIndex = tilesInRow.indexOf(closestTile.element);
             
-            // Only swap if we're in the target row
-            if (currentIndex !== newIndex) {
-              changePosition(currentIndex, newIndex, hoveringRow);
+            // Only reorder within the same row
+            if (currentIndex !== -1 && newIndex !== -1) {
+              reorderWithinRow(hoveringRow, currentIndex, newIndex);
             }
           }
           
-          tile.inBounds = this.hitTest(listElement, 0);
+          tile.inBounds = this.hitTest(listRef.current, 0);
           Object.assign(tile, {
             x: this.x,
             y: this.y
@@ -183,13 +182,13 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
           const currentY = this.y;
           const finalRow = Math.min(Math.max(Math.floor(currentY / (rowSize + gutter)), 0), MAX_ROWS - 1);
           
-          // Get current index and calculate new position
-          const currentIndex = Array.from(listRef.current.children).indexOf(this.target);
+          // Get items in the final row
+          const tilesInRow = getItemsInRow(finalRow);
           
-          // Calculate the nearest column position based on x coordinate
+          // Calculate nearest position in the row
           const nearestCol = Math.min(
             Math.max(Math.round(this.x / (colSize + gutter)), 0),
-            colCount - 1
+            tilesInRow.length
           );
           
           // Calculate exact grid position
@@ -205,6 +204,7 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
             y: yPos,
             zIndex: ++zIndex,
             onComplete: () => {
+              tile.row = finalRow;
               layoutInvalidated(finalRow);
             }
           });
@@ -212,15 +212,23 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
       });
     };
 
-    // Initialize
-    window.addEventListener('resize', resize);
+    // Create new tiles
     skills.forEach(createTile);
     resize();
 
+    window.addEventListener('resize', resize);
     return () => {
       window.removeEventListener('resize', resize);
+      // Clean up tiles on unmount
+      if (listRef.current) {
+        while (listRef.current.firstChild) {
+          listRef.current.removeChild(listRef.current.firstChild);
+        }
+      }
     };
-  }, []);
+  }, [skills]);
+
+  const [highPrioritySkills, setHighPrioritySkills] = useState<string[]>([]);
 
   const layoutInvalidated = (rowToUpdate = -1) => {
     if (!listRef.current) return;
@@ -228,16 +236,16 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
     const timeline = gsap.timeline();
     const tileElements = Array.from(listRef.current.getElementsByClassName('tile'));
     
-    // Calculate positions based on container width
+    // Track items that end up in row 0 (high priority)
+    const newHighPrioritySkills: string[] = [];
+    
     tileElements.forEach((element, index) => {
       const tile = (element as any).tile;
       if (tile.isDragging) return;
 
-      // Calculate row and column based on index
       const row = Math.min(Math.floor(index / colCount), MAX_ROWS - 1);
       const col = index % colCount;
       
-      // Calculate exact pixel positions
       const xPos = col * (colSize + gutter);
       const yPos = row * (rowSize + gutter);
       
@@ -249,6 +257,11 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
         positioned: true
       });
       
+      // If this item is in row 0, add it to high priority skills
+      if (row === 0) {
+        newHighPrioritySkills.push(element.innerHTML);
+      }
+      
       timeline.to(element, 0.3, {
         x: xPos,
         y: yPos,
@@ -256,6 +269,44 @@ export default function SkillsGrid({ skills }: SkillsGridProps) {
         immediateRender: true
       }, "reflow");
     });
+
+    // Update high priority skills and notify parent
+    if (JSON.stringify(newHighPrioritySkills) !== JSON.stringify(highPrioritySkills)) {
+      setHighPrioritySkills(newHighPrioritySkills);
+      onHighPrioritySkillsChange?.(newHighPrioritySkills);
+    }
+  };
+
+  // Add a function to get items in a specific row
+  const getItemsInRow = (row: number) => {
+    if (!listRef.current) return [];
+    return Array.from(listRef.current.children).filter(child => {
+      const tile = (child as any).tile;
+      return tile.row === row;
+    });
+  };
+
+  // Add a function to reorder items within a row
+  const reorderWithinRow = (row: number, fromIndex: number, toIndex: number) => {
+    if (!listRef.current) return;
+    
+    const tilesInRow = getItemsInRow(row);
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || 
+        fromIndex >= tilesInRow.length || toIndex >= tilesInRow.length) return;
+    
+    const element = tilesInRow[fromIndex];
+    const target = tilesInRow[toIndex];
+    
+    if (!element || !target || !target.parentNode) return;
+    
+    // Reorder only within the row
+    if (fromIndex > toIndex) {
+      target.parentNode.insertBefore(element, target);
+    } else {
+      target.parentNode.insertBefore(element, target.nextSibling);
+    }
+    
+    layoutInvalidated(row);
   };
 
   return (
