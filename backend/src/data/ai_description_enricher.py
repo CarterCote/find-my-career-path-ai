@@ -9,7 +9,7 @@ import json
 class AIDescriptionEnricher:
     def __init__(self, api_key: str):
         openai.api_key = api_key
-        print("Initialized OpenAI with API key")
+        print("Initialized OpenAI with API key: " + openai.api_key)
         # Initialize the local embedding model
         print("Loading local embedding model...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -54,7 +54,7 @@ class AIDescriptionEnricher:
             """
             
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",  # Using 3.5 to save costs
+                model="gpt-4o",  # Using 3.5 to save costs
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that extracts structured information from job descriptions. Respond only with valid JSON."},
                     {"role": "user", "content": prompt}

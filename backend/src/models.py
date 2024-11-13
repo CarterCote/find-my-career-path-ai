@@ -67,5 +67,5 @@ class JobPosting(Base):
     views = Column(Integer)
     med_salary = Column(Float(2))
     min_salary = Column(Float(2))
-    description_embedding = Column(Vector(dim=768), nullable=True)
+    description_embedding = Column(Vector(dim=384), nullable=True)
     structured_description = Column(JSON, nullable=True)

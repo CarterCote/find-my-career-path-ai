@@ -29,7 +29,7 @@ const Header = () => {
 
     return (
         <>
-            <header className={`flex w-full justify-between bg-primaryBlue items-center flex-row border-b pb-3.5 py-5 md:px-12 px-4 sticky top-0 z-50 'bg-black text-white border-[#242424]`}>
+            <header className={`flex w-full justify-between bg-primaryBlue items-center flex-row border-b py-6 md:px-12 px-4 sticky top-0 z-50 'bg-black text-white border-[#242424]`}>
                 <div>
                     <Link href="/">
                         <Image

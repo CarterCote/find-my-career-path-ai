@@ -5,8 +5,8 @@ import { useMediaQuery } from 'react-responsive';
 const navItems = [
 
   {
-    name: "ABOUT",
-    link: "/",
+    name: "Take the survey",
+    link: "/try",
   },
 ];
 

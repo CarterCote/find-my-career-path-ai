@@ -80,6 +80,40 @@ export default function Try() {
         exit: { opacity: 0 }
     };
 
+    // Add state for tracking top items from each grid
+    const [topSkills, setTopSkills] = useState<string[]>([]);
+    const [topWorkCulture, setTopWorkCulture] = useState<string[]>([]);
+    const [topCoreValues, setTopCoreValues] = useState<string[]>([]);
+    const [additionalInterests, setAdditionalInterests] = useState('');
+
+    // Add function to send data to backend
+    const handleFinish = async () => {
+        try {
+            const response = await fetch('/api/profile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    skills: topSkills,
+                    work_culture: topWorkCulture,
+                    core_values: topCoreValues,
+                    additional_interests: additionalInterests
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save profile');
+            }
+
+            // Handle successful save (e.g., redirect to next page)
+            
+        } catch (error) {
+            console.error('Error saving profile:', error);
+            // Handle error (show error message to user)
+        }
+    };
+
   return (
     <div className="min-h-screen p-8 pb-20 gap-16 sm:p-2">
       <Header />
@@ -212,6 +246,7 @@ export default function Try() {
                 <SkillsGrid 
                     skills={skills} 
                     onHighPrioritySkillsChange={(skills) => setStep3HighSkills(skills)}
+                    onTopTenChange={setTopSkills}
                 />
               </div>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -343,7 +378,7 @@ export default function Try() {
                         Low
                     </div>
                     </div>
-                    <SkillsGrid skills={workCulture} />
+                    <SkillsGrid skills={workCulture} onTopTenChange={setTopWorkCulture} />
                 </div>
                 <div className="flex flex-row items-center w-full justify-between mt-8">
                     <Button variant="secondary" onClick={handleBack}>Back</Button>
@@ -391,7 +426,7 @@ export default function Try() {
                     Low
                   </div>
                 </div>
-                <SkillsGrid skills={coreValues} />
+                <SkillsGrid skills={coreValues} onTopTenChange={setTopCoreValues} />
               </div>
               <div className="flex flex-row items-center w-full justify-between mt-8">
                 <Button variant="secondary" onClick={handleBack}>Back</Button>
@@ -427,6 +462,8 @@ export default function Try() {
                 <Textarea 
                   className="min-h-[250px]" 
                   placeholder="Share any additional thoughts, questions, or context about your career journey..."
+                  value={additionalInterests}
+                  onChange={(e) => setAdditionalInterests(e.target.value)}
                 />
               </div>
               <div className="flex flex-row items-center w-full justify-between">

@@ -27,9 +27,10 @@ interface Tile {
 interface SkillsGridProps {
   skills: string[];
   onHighPrioritySkillsChange?: (skills: string[]) => void;
+  onTopTenChange?: (items: string[]) => void;
 }
 
-export default function SkillsGrid({ skills, onHighPrioritySkillsChange }: SkillsGridProps) {
+export default function SkillsGrid({ skills, onHighPrioritySkillsChange, onTopTenChange }: SkillsGridProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [tiles, setTiles] = useState<HTMLElement[]>([]);
   
@@ -236,6 +237,14 @@ export default function SkillsGrid({ skills, onHighPrioritySkillsChange }: Skill
     const timeline = gsap.timeline();
     const tileElements = Array.from(listRef.current.getElementsByClassName('tile'));
     
+    // Track items in the top row
+    const topRowItems = getItemsInRow(0)
+      .map(element => element.innerHTML)
+      .slice(0, 10); // Get only first 10 items
+    
+    // Notify parent of top ten changes
+    onTopTenChange?.(topRowItems);
+
     // Track items that end up in row 0 (high priority)
     const newHighPrioritySkills: string[] = [];
     

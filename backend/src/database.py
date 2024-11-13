@@ -6,12 +6,32 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-SQLALCHEMY_DATABASE_URL = "postgresql://cartercote:3845@localhost/career_data"
+load_dotenv()
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Get database connection details from environment variables
+DB_HOST = os.getenv("SUPABASE_DB_HOST")
+DB_PORT = os.getenv("SUPABASE_DB_PORT")
+DB_NAME = os.getenv("SUPABASE_DB_NAME")
+DB_USER = os.getenv("SUPABASE_DB_USER")
+DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+
+if not all([DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
+    raise ValueError("Missing required database environment variables")
+
+SUPABASE_DB_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# Create engine with SSL requirement
+engine = create_engine(
+    SUPABASE_DB_URL,
+    connect_args={
+        "sslmode": "require"
+    }
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 def get_db():
