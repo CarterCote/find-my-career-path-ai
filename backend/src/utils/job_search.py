@@ -144,23 +144,17 @@ class JobSearchService:
             # Get job recommendations using graph-enhanced search
             self.retriever.strategy = SearchStrategy.GRAPH
             results = self.retriever.search_jobs(query)
-            related_titles = self._get_related_titles(query)
             
-            # Filter out irrelevant jobs
+            # Get user profile once for both filtering and personalization
             user_profile = db.query(UserProfile).filter(
                 UserProfile.session_id == session_id
             ).first()
-            filtered_results = self.filter_irrelevant_jobs(results, query, user_profile)
             
-            # Format results for the LLM
+            # Filter and process results
+            filtered_results = self.filter_irrelevant_jobs(results, query, user_profile)
             formatted_results = self._format_results(filtered_results)
             
-            # Get user profile for personalization
-            user_profile = db.query(UserProfile).filter(
-                UserProfile.session_id == session_id
-            ).first()
-            
-            # Include user preferences in the prompt if available
+            # Add personalization context if profile exists
             user_context = ""
             if user_profile:
                 user_context = f"""
@@ -171,47 +165,17 @@ class JobSearchService:
                 - Goals: {user_profile.goals}
                 """
             
-            # Create the message for the LLM with user context
-            messages = [
-                SystemMessage(content=self.system_prompt),
-                *[ChatMessage(content=m.content, role=m.role) for m in history.messages[-5:]],  # Last 5 messages
-                HumanMessage(content=f"""
-                User Context: {user_context}
-                
-                Current Query: {query}
-                
-                Found Jobs: {json.dumps(formatted_results, indent=2)}
-                
-                Related Titles: {', '.join(related_titles)}
-                
-                Please provide a personalized response that:
-                1. Addresses their search requirements
-                2. Highlights the most relevant jobs based on their preferences
-                3. Suggests related titles they might be interested in
-                4. Provides relevant career advice
-                """)
-            ]
-            
-            # Get response from LLM
-            response = self.llm(messages)
-            
-            # Store assistant response in both memory and database
-            history.add_ai_message(response.content)
-            create_chat_message(db, session_id, response.content, is_user=False)
-            
             return {
-                "response": response.content,
-                "session_id": session_id,
                 "jobs": formatted_results,
-                "related_titles": related_titles
+                "session_id": session_id,
+                "user_context": user_context if user_profile else None
             }
-            
+                
         except Exception as e:
             print(f"Error in search: {str(e)}")
             return {
-                "response": "I apologize, but I'm having trouble processing your request.",
-                "session_id": session_id,
-                "error": str(e)
+                "error": str(e),
+                "jobs": []
             }
 
     def filtered_search(self, **filters):
@@ -313,36 +277,48 @@ class JobSearchService:
         """Filter out irrelevant jobs based on query and user preferences"""
         filtered_jobs = []
         
-        # Get query embeddings for semantic matching using the retriever's embed model
+        print(f"Filtering {len(jobs)} jobs")  # Debug print
+        
+        # Get query embeddings for semantic matching
         query_embedding = self.retriever.embed_model.encode([query])[0]
         
         for job in jobs:
             relevance_score = 0
             
-            # 1. Title relevance using graph relationships
-            title_relevance = self._check_title_relevance(job['title'], query)
-            relevance_score += title_relevance * 0.4  # 40% weight
+            # 1. Title relevance (30% weight)
+            title_relevance = self._check_title_relevance(job.get('title', ''), query)
+            relevance_score += title_relevance * 0.3
             
-            # 2. Skill match if user profile exists
+            # 2. Skill match if user profile exists (30% weight)
             if user_profile and user_profile.skills:
                 skill_match = self._calculate_skill_match(
                     user_profile.skills,
                     job.get('required_skills', [])
                 )
-                relevance_score += skill_match * 0.3  # 30% weight
+                relevance_score += skill_match * 0.3
+            else:
+                # If no user profile, increase weight of other factors
+                relevance_score += 0.3  # Add default score
             
-            # 3. Semantic relevance using description embeddings
+            # 3. Semantic relevance (40% weight)
             if 'description_embedding' in job:
                 semantic_score = cosine_similarity(
                     [query_embedding],
                     [job['description_embedding']]
                 )[0][0]
-                relevance_score += semantic_score * 0.3  # 30% weight
+                relevance_score += semantic_score * 0.4
+            else:
+                # If no embedding, increase weight of other factors
+                relevance_score += 0.4  # Add default score
             
-            # Include job if relevance score meets threshold
-            if relevance_score > 0.5:  # Adjustable threshold
+            print(f"Job {job.get('title', 'Unknown')}: score={relevance_score}")  # Debug print
+            
+            # Lower threshold and always include some results
+            if relevance_score > 0.3 or len(filtered_jobs) < 5:  # Ensure at least 5 results
                 job['relevance_score'] = relevance_score
                 filtered_jobs.append(job)
+        
+        print(f"Filtered to {len(filtered_jobs)} jobs")  # Debug print
         
         # Sort by relevance score
         return sorted(filtered_jobs, key=lambda x: x['relevance_score'], reverse=True)
@@ -370,6 +346,49 @@ class JobSearchService:
         except Exception as e:
             print(f"Error getting related titles: {str(e)}")
             return []
+
+    def _format_results(self, results: List[Dict]) -> List[Dict]:
+        """Format job search results for output"""
+        formatted = []
+        for job in results:
+            # Convert to dict if it's a SQLAlchemy model
+            job_dict = dict(job) if hasattr(job, '_asdict') else job
+            
+            # Remove large embedding data
+            job_dict.pop('description_embedding', None)
+            
+            # Format scores as floats
+            if 'semantic_score' in job_dict:
+                job_dict['relevance_score'] = float(job_dict['semantic_score'])
+            if 'text_score' in job_dict:
+                job_dict['text_match_score'] = float(job_dict['text_score'])
+            
+            formatted.append(job_dict)
+        
+        return formatted
+
+    def _check_title_relevance(self, title: str, query: str) -> float:
+        """Check how relevant a job title is to the search query"""
+        try:
+            # Clean and normalize strings
+            title = title.lower()
+            query = query.lower()
+            
+            # Split into words
+            title_words = set(title.split())
+            query_words = set(query.split())
+            
+            # Calculate overlap
+            common_words = title_words.intersection(query_words)
+            if not query_words:
+                return 0.0
+            
+            # Return percentage of query words found in title
+            return len(common_words) / len(query_words)
+            
+        except Exception as e:
+            print(f"Error checking title relevance: {str(e)}")
+            return 0.0
 
 @lru_cache()
 def get_search_service(db: Session):
