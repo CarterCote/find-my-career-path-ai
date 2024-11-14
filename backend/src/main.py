@@ -2,13 +2,9 @@ from fastapi import FastAPI
 from .api.routes import jobs, chat, users
 from .config import Settings
 from llama_index.core import Settings as LlamaSettings
-from llama_index.embeddings.openai import OpenAIEmbedding
 
 app = FastAPI()
 settings = Settings()
-
-# Initialize embedding model
-LlamaSettings.embed_model = OpenAIEmbedding()
 
 # Include routers
 app.include_router(jobs.router)

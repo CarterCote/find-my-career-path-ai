@@ -5,15 +5,16 @@ export async function POST(request: Request) {
     const data = await request.json();
     
     // Send data to your backend
-    const response = await fetch('YOUR_BACKEND_URL/user_profiles', {
+    const response = await fetch('http://localhost:8000/users/preferences', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        skills: data.skills,
-        work_culture: data.work_culture,
-        core_values: data.core_values,
+        session_id: "test-session", // You can generate this dynamically
+        core_values: data.core_values.slice(0, 10),
+        work_culture: data.work_culture.slice(0, 10),
+        skills: data.skills.slice(0, 10),
         additional_interests: data.additional_interests
       })
     });

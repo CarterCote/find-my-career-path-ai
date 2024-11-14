@@ -45,3 +45,4 @@ pydantic>=2.7.4
 pydantic-settings>=2.3.4
 llama-index-llms-langchain
 langchain-openai
+modal>=0.61.3

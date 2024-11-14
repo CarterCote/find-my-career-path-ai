@@ -1,16 +1,39 @@
-from typing import Dict
-from fastapi import APIRouter, Depends, Query
+from typing import Dict, List, Optional
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from src.database import get_db
-from src.services.job_search import get_search_service
-from src.models.job_search import JobSearchFilters
+from pydantic import BaseModel
+from ...database import get_db
+from ...utils.job_search import get_search_service
+
+# Move these models to a new file later if they grow more complex
+class JobSearchFilters(BaseModel):
+    min_salary: Optional[float] = None
+    skills: Optional[List[str]] = None
+    work_environment: Optional[str] = None
+    experience_years: Optional[str] = None
+    education_level: Optional[str] = None
+
+class JobSearchResult(BaseModel):
+    id: int
+    title: str
+    company: str
+    description: str
+    salary_range: Optional[str] = None
+    required_skills: List[str]
+    experience_years: Optional[str] = None
+    education_level: Optional[str] = None
+    work_environment: Optional[str] = None
+
+class SearchResponse(BaseModel):
+    results: List[JobSearchResult]
+    session_id: Optional[str] = None
 
 router = APIRouter(
     prefix="/jobs",
     tags=["jobs"]
 )
 
-@router.get("/search")
+@router.get("/search", response_model=SearchResponse)
 async def search_jobs(
     query: str,
     session_id: str = Query(default="default"),
@@ -24,7 +47,7 @@ async def search_jobs(
         "session_id": session_id
     }
 
-@router.post("/search/filtered")
+@router.post("/search/filtered", response_model=SearchResponse)
 async def filtered_search(
     filters: JobSearchFilters,
     db: Session = Depends(get_db)

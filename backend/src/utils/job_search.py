@@ -10,10 +10,14 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from ..crud import create_chat_message
 from ..models import UserProfile
-from .job_retriever import SearchStrategy
+from .job_retriever import JobSearchRetriever, SearchStrategy
+from sklearn.metrics.pairwise import cosine_similarity
+from functools import lru_cache
+from ..config import get_settings
+from sentence_transformers import SentenceTransformer
 
 import json
 
@@ -142,8 +146,14 @@ class JobSearchService:
             results = self.retriever.search_jobs(query)
             related_titles = self._get_related_titles(query)
             
+            # Filter out irrelevant jobs
+            user_profile = db.query(UserProfile).filter(
+                UserProfile.session_id == session_id
+            ).first()
+            filtered_results = self.filter_irrelevant_jobs(results, query, user_profile)
+            
             # Format results for the LLM
-            formatted_results = self._format_results(results)
+            formatted_results = self._format_results(filtered_results)
             
             # Get user profile for personalization
             user_profile = db.query(UserProfile).filter(
@@ -204,16 +214,19 @@ class JobSearchService:
                 "error": str(e)
             }
 
-    def filtered_search(
-        self,
-        min_salary: Optional[float] = None,
-        required_skills: Optional[List[str]] = None,
-        work_environment: Optional[str] = None,
-        experience_years: Optional[int] = None,
-        education_level: Optional[str] = None
-    ) -> Dict:
-        """Search jobs with structured filters from the enriched data"""
+    def filtered_search(self, **filters):
         try:
+            print(f"Applying filters: {filters}")  # Debug log
+            
+            # Extract filter values
+            min_salary = filters.get('min_salary')
+            required_skills = filters.get('required_skills', [])
+            work_environment = filters.get('work_environment')
+            experience_years = filters.get('experience_years')
+            education_level = filters.get('education_level')
+            
+            print(f"Extracted filters - Skills: {required_skills}, Environment: {work_environment}")  # Debug log
+            
             # Create filter dict for the retriever
             filters = {
                 'min_salary': min_salary,
@@ -295,3 +308,83 @@ class JobSearchService:
         
         total_score = (direct_matches + semantic_matches) / len(required_set)
         return min(1.0, total_score)  # Normalize to 0-1
+
+    def filter_irrelevant_jobs(self, jobs: List[Dict], query: str, user_profile: Optional[UserProfile] = None) -> List[Dict]:
+        """Filter out irrelevant jobs based on query and user preferences"""
+        filtered_jobs = []
+        
+        # Get query embeddings for semantic matching using the retriever's embed model
+        query_embedding = self.retriever.embed_model.encode([query])[0]
+        
+        for job in jobs:
+            relevance_score = 0
+            
+            # 1. Title relevance using graph relationships
+            title_relevance = self._check_title_relevance(job['title'], query)
+            relevance_score += title_relevance * 0.4  # 40% weight
+            
+            # 2. Skill match if user profile exists
+            if user_profile and user_profile.skills:
+                skill_match = self._calculate_skill_match(
+                    user_profile.skills,
+                    job.get('required_skills', [])
+                )
+                relevance_score += skill_match * 0.3  # 30% weight
+            
+            # 3. Semantic relevance using description embeddings
+            if 'description_embedding' in job:
+                semantic_score = cosine_similarity(
+                    [query_embedding],
+                    [job['description_embedding']]
+                )[0][0]
+                relevance_score += semantic_score * 0.3  # 30% weight
+            
+            # Include job if relevance score meets threshold
+            if relevance_score > 0.5:  # Adjustable threshold
+                job['relevance_score'] = relevance_score
+                filtered_jobs.append(job)
+        
+        # Sort by relevance score
+        return sorted(filtered_jobs, key=lambda x: x['relevance_score'], reverse=True)
+
+    def _get_related_titles(self, query: str) -> List[str]:
+        """Get related job titles based on the query"""
+        try:
+            # Get base results
+            results = self.retriever.search_jobs(query, {"limit": 5})
+            
+            # Extract unique titles
+            titles = set()
+            for job in results:
+                # Add the main title
+                titles.add(job.title)
+                
+                # Add related titles from structured description if available
+                if hasattr(job, 'structured_description'):
+                    struct_desc = job.structured_description
+                    if isinstance(struct_desc, dict) and 'related_titles' in struct_desc:
+                        titles.update(struct_desc['related_titles'])
+            
+            return list(titles)[:5]  # Return top 5 related titles
+            
+        except Exception as e:
+            print(f"Error getting related titles: {str(e)}")
+            return []
+
+@lru_cache()
+def get_search_service(db: Session):
+    """Initialize and return a JobSearchService instance"""
+    settings = get_settings()
+    
+    # Initialize the model using the name from settings
+    embed_model = SentenceTransformer(settings.embed_model_name)
+    
+    # Initialize the retriever with the model instance
+    retriever = JobSearchRetriever(
+        db=db,
+        embed_model=embed_model,  # Pass the initialized model
+        strategy=SearchStrategy.SEMANTIC
+    )
+    
+    # Create and return the search service
+    return JobSearchService(retriever=retriever, settings=settings)
