@@ -86,38 +86,72 @@ async def create_user_preferences(
         all_results = []
         seen_jobs = set()
         
+        def normalize_text(text: str) -> str:
+            """Normalize text for matching by removing extra spaces and lowercasing"""
+            return ' '.join(text.lower().split())
+
+        def contains_phrase(text: str, phrase: str) -> bool:
+            """Check if text contains a phrase or its key components"""
+            text = normalize_text(text)
+            phrase = normalize_text(phrase)
+            
+            # Direct match
+            if phrase in text:
+                return True
+            
+            # Break into components for partial matches
+            words = phrase.split()
+            if len(words) > 1:
+                # For multi-word skills, check if key words appear within 5 words of each other
+                main_words = [w for w in words if len(w) > 3]  # Skip short words like "to", "in"
+                for word in main_words:
+                    if word not in text:
+                        return False
+                return True
+            
+            return False
+
         # Process filtered results first
         for job in results.get("jobs", []):
             if job["job_id"] not in seen_jobs:
                 seen_jobs.add(job["job_id"])
                 
-                # Calculate match scores
+                description = job.get("description", "").lower()
+                
+                # More flexible skill matching
                 matching_skills = [
                     skill for skill in preferences.skills 
-                    if skill.lower() in job.get("required_skills", [])
+                    if contains_phrase(description, skill)
                 ]
                 
+                # More flexible culture matching
                 matching_culture = [
                     culture for culture in preferences.work_culture 
-                    if culture.lower() in job.get("work_environment", "").lower()
+                    if contains_phrase(description, culture)
                 ]
                 
-                match_score = (
-                    len(matching_skills) / len(preferences.skills) * 0.6 +
-                    len(matching_culture) / len(preferences.work_culture) * 0.4
-                )
+                # Calculate match score with a minimum threshold
+                skills_score = len(matching_skills) / len(preferences.skills) if preferences.skills else 0
+                culture_score = len(matching_culture) / len(preferences.work_culture) if preferences.work_culture else 0
                 
-                all_results.append(JobRecommendation(
-                    job_id=job["job_id"],
-                    title=job["title"],
-                    company_name=job["company_name"],
-                    description=job["description"],
-                    salary_range=f"${job.get('min_salary', 0):,.0f} - ${job.get('max_salary', 0):,.0f}",
-                    match_score=match_score,
-                    matching_skills=matching_skills,
-                    matching_culture=matching_culture,
-                    location=job.get("location")
-                ))
+                match_score = (
+                    skills_score * 0.6 +
+                    culture_score * 0.4
+                )
+
+                # Only include jobs with at least some matches
+                if match_score > 0:
+                    all_results.append(JobRecommendation(
+                        job_id=job["job_id"],
+                        title=job["title"],
+                        company_name=job["company_name"],
+                        description=job["description"],
+                        salary_range=f"${job.get('min_salary', 0):,.0f} - ${job.get('max_salary', 0):,.0f}",
+                        match_score=match_score,
+                        matching_skills=matching_skills,
+                        matching_culture=matching_culture,
+                        location=job.get("location")
+                    ))
         
         # Sort by match score and take top 10
         all_results.sort(key=lambda x: x.match_score, reverse=True)

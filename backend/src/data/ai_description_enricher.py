@@ -5,6 +5,7 @@ import pandas as pd
 from tenacity import retry, stop_after_attempt, wait_exponential
 from sentence_transformers import SentenceTransformer
 import json
+from ..prompts.description_enricher_prompts import STRUCTURED_DESCRIPTION
 
 class AIDescriptionEnricher:
     def __init__(self, api_key: str):
@@ -31,27 +32,11 @@ class AIDescriptionEnricher:
     def create_structured_description(self, description: str) -> Dict:
         """Create structured description using OpenAI's API with length handling"""
         try:
+            prompt = STRUCTURED_DESCRIPTION.format(description=description)
             # Truncate description if too long (roughly 4000 tokens ~ 16000 chars)
             max_chars = 16000
             if len(description) > max_chars:
                 description = description[:max_chars] + "..."
-            
-            prompt = f"""Please analyze this job description and extract key information in JSON format:
-            
-            Job Description:
-            {description}
-            
-            Please provide:
-            1. Required skills (list)
-            2. Years of experience (text)
-            3. Education requirements (text)
-            4. Key responsibilities (list)
-            5. Benefits mentioned (list)
-            6. Required certifications (list)
-            7. Work environment (remote/hybrid/onsite)
-            
-            Keep the response concise and focused on the most important points.
-            """
             
             response = openai.chat.completions.create(
                 model="gpt-4o",  # Using 3.5 to save costs

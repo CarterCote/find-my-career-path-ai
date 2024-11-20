@@ -16,4 +16,4 @@ def get_search_service(db: Session = Depends(get_db)) -> JobSearchService:
         embed_model=embed_model, 
         strategy=SearchStrategy.SEMANTIC
     )
-    return JobSearchService(retriever=retriever, settings=settings)
+    return JobSearchService(retriever=retriever, settings=settings, db=db)

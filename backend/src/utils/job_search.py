@@ -18,13 +18,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 from functools import lru_cache
 from ..config import get_settings
 from sentence_transformers import SentenceTransformer
+from .profile_questioner import ProfileQuestioner
+from ..prompts.job_search_prompts import SYSTEM_PROMPT, FOLLOWUP_PROMPT
+from ..prompts.search_prompts import SEARCH_ENHANCEMENT
 
 import json
 
 class JobSearchService:
-    def __init__(self, retriever, settings):
+    def __init__(self, retriever, settings, db: Session):
         self.retriever = retriever
-
+        self.db = db
         self.store = {}
         
         # Initialize OpenAI chat
@@ -34,38 +37,14 @@ class JobSearchService:
             api_key=settings.openai_api_key
         )
         
+        # Initialize profile questioner
+        self.profile_questioner = ProfileQuestioner(settings)
+        
+        # Add a state tracker for question-answer flow
+        self.qa_state = {}
+        
         # Your system prompt
-        self.system_prompt = """You are an intelligent job search assistant. Your role is to help users find relevant job opportunities and provide career guidance. When users describe what they're looking for, help them by:
-
-        1. Understanding their requirements for:
-           - Role/title
-           - Skills and experience level
-           - Salary expectations
-           - Location preferences
-           - Work type (remote/hybrid/onsite)
-           
-        2. Providing relevant job matches with key details about:
-           - Job responsibilities
-           - Required qualifications
-           - Company information
-           - Compensation and benefits
-           - Location and work arrangement
-           
-        3. Offering additional career guidance like:
-           - Skills that could make them more competitive
-           - Industry insights
-           - Interview preparation tips
-           - Salary negotiation advice
-
-        Keep your tone professional but friendly, and focus on being helpful and informative.
-
-        Example Interactions:
-        User: "I'm looking for a remote software engineering job that pays at least $120k"
-        Assistant: Let me help you find relevant positions. Based on your requirements, I'll look for remote software engineering roles with competitive compensation...
-
-        User: "Tell me more about the requirements for the first job"
-        Assistant: Let me break down the key requirements for that position...
-        """
+        self.system_prompt = SYSTEM_PROMPT
         
         # Your conversation prompt
         self.conversation_prompt = ChatPromptTemplate.from_messages([
@@ -74,18 +53,7 @@ class JobSearchService:
         ])
         
         # Your follow-up prompt
-        self.followup_prompt = PromptTemplate("""
-        Given the conversation history and follow-up message, rewrite the question 
-        to include relevant context from previous messages.
-
-        Chat History:
-        {chat_history}
-
-        Follow Up Message:
-        {question}
-
-        Standalone question:
-        """)
+        self.followup_prompt = PromptTemplate(FOLLOWUP_PROMPT)
         
         # Set up search components
         self.cohere_rerank = CohereRerank(api_key=settings.cohere_api_key, top_n=3)
@@ -111,26 +79,140 @@ class JobSearchService:
         return self.store[session_id]
 
     def chat(self, message: str, session_id: str = "default") -> Dict:
+        """Handle chat interactions including Q&A flow"""
         try:
-            # Create messages list with system prompt and user message
-            messages = [
-                ChatMessage(role=MessageRole.SYSTEM, content=self.system_prompt),
-                ChatMessage(role=MessageRole.USER, content=message)
-            ]
+            print(f"\nDebug - Chat called with message: {message}")
             
-            # Get response from ChatGPT
-            response = self.llm.chat(messages)
+            # Initialize Q&A state if this is the first question
+            if message.lower() == "based on my profile, what specific questions should i answer to help refine my job search?":
+                print("Debug - Starting new Q&A session")
+                user_profile = self.db.query(UserProfile).filter(
+                    UserProfile.session_id == session_id
+                ).first()
+                
+                print(f"Debug - Retrieved user profile: {user_profile.__dict__ if user_profile else None}")
+                
+                if user_profile:
+                    # Convert UserProfile model to dictionary with the expected keys
+                    profile_data = {
+                        'core_values': user_profile.core_values,
+                        'work_culture': user_profile.work_culture,
+                        'skills': user_profile.skills,
+                        'additional_interests': user_profile.additional_interests
+                    }
+                    
+                    print(f"Debug - Formatted profile data: {profile_data}")
+                    
+                    # Generate dynamic questions based on formatted profile
+                    questions = self.profile_questioner.generate_questions(profile_data)
+                    
+                    print(f"Debug - Generated questions: {questions}")
+                    
+                    if not questions:
+                        print("Debug - No questions generated, falling back to defaults")
+                        return {
+                            "response": "What specific technical skills are most important for your ideal role?",
+                            "session_id": session_id
+                        }
+                    
+                    self.qa_state[session_id] = {
+                        "questions": questions,
+                        "current_index": 0,
+                        "answers": [],
+                        "complete": False
+                    }
+                    
+                    return {
+                        "response": questions[0],
+                        "session_id": session_id,
+                        "questions": questions
+                    }
             
-            return {
-                "response": response.content,
-                "session_id": session_id
-            }
+            # Handle ongoing Q&A session
+            if session_id in self.qa_state and not self.qa_state[session_id]["complete"]:
+                state = self.qa_state[session_id]
+                
+                # Store the answer to the current question
+                state["answers"].append({
+                    "question": state["questions"][state["current_index"]],
+                    "answer": message
+                })
+                
+                # Move to next question
+                state["current_index"] += 1
+                
+                # Check if we have more questions
+                if state["current_index"] < len(state["questions"]):
+                    return {
+                        "response": state["questions"][state["current_index"]],
+                        "session_id": session_id
+                    }
+                else:
+                    # Q&A is complete, process answers into search parameters
+                    state["complete"] = True
+                    search_params = self._process_qa_answers(state["answers"])
+                    
+                    # Perform search with accumulated parameters
+                    results = self.search(
+                        query=self._build_search_query(search_params),
+                        db=self.db,
+                        session_id=session_id
+                    )
+                    
+                    return {
+                        "response": "Based on your answers, I've found some matching jobs. Would you like to see them?",
+                        "session_id": session_id,
+                        "jobs": results
+                    }
+            
+            # Fall back to regular chat if no active Q&A session
+            return self._handle_regular_chat(message, session_id)
+                
         except Exception as e:
-            print(f"Error in chat: {str(e)}")  # For debugging
+            print(f"Error in chat: {str(e)}")
             return {
-                "response": "I apologize, but I'm having trouble right now. Could you try asking your question again?",
+                "response": "I apologize, but I'm having trouble. Could you try asking your question again?",
                 "session_id": session_id
             }
+
+    def _process_qa_answers(self, answers: List[Dict]) -> Dict:
+        """Process Q&A answers into search parameters"""
+        search_params = {
+            "technologies": [],
+            "role_focus": "",
+            "interests": [],
+            "project_type": ""
+        }
+        
+        for qa in answers:
+            question = qa["question"].lower()
+            answer = qa["answer"].lower()
+            
+            if "programming languages" in question:
+                search_params["technologies"] = [tech.strip() for tech in answer.split(",")]
+            elif "type of development role" in question:
+                search_params["role_focus"] = answer
+            elif "aspects of software development" in question:
+                search_params["interests"] = [interest.strip() for interest in answer.split(",")]
+            elif "projects" in question:
+                search_params["project_type"] = answer
+        
+        return search_params
+
+    def _build_search_query(self, params: Dict) -> str:
+        """Build search query from parameters"""
+        query_parts = []
+        
+        if params["technologies"]:
+            query_parts.append(f"technologies: {', '.join(params['technologies'])}")
+        if params["role_focus"]:
+            query_parts.append(f"role: {params['role_focus']}")
+        if params["interests"]:
+            query_parts.append(f"focus: {', '.join(params['interests'])}")
+        if params["project_type"]:
+            query_parts.append(f"projects: {params['project_type']}")
+        
+        return " AND ".join(query_parts)
 
     def search(self, query: str, db: Session, session_id: str = "default") -> Dict:
         try:
@@ -390,6 +472,98 @@ class JobSearchService:
             print(f"Error checking title relevance: {str(e)}")
             return 0.0
 
+    async def profile_based_search(self, profile_data: Dict, query: str, db: Session) -> Dict:
+        """Perform a search incorporating user profile data"""
+        try:
+            # Generate profile-specific search parameters
+            search_params = self.profile_questioner.generate_search_params(profile_data)
+            
+            # Combine with query parameters
+            combined_query = self._enhance_query_with_profile(query, search_params)
+            
+            # Perform search with enhanced parameters
+            results = self.search(combined_query, db)
+            
+            # Rank results based on profile alignment
+            ranked_results = self._rank_by_profile_match(results, profile_data)
+            
+            return {
+                "results": ranked_results,
+                "profile_match_details": search_params,
+                "enhanced_query": combined_query
+            }
+        except Exception as e:
+            print(f"Error in profile-based search: {str(e)}")
+            return {"error": str(e), "results": []}
+
+    def _enhance_query_with_profile(self, query: str, profile_params: Dict) -> str:
+        """Enhance search query with profile parameters"""
+        enhanced_query = query
+        
+        # Add relevant skills
+        if profile_params.get('skills'):
+            skills_str = " OR ".join(profile_params['skills'][:3])  # Top 3 skills
+            enhanced_query += f" AND ({skills_str})"
+            
+        # Add work environment preferences
+        if profile_params.get('work_environment'):
+            enhanced_query += f" AND {profile_params['work_environment']}"
+            
+        return enhanced_query
+
+    def _rank_by_profile_match(self, results: List[Dict], profile_data: Dict) -> List[Dict]:
+        """Rank search results based on profile match"""
+        ranked_results = []
+        
+        for result in results:
+            # Calculate match scores
+            skill_match = self._calculate_skill_match(
+                profile_data.get('skills', []),
+                result.get('required_skills', [])
+            )
+            
+            culture_match = self._calculate_culture_match(
+                profile_data.get('work_culture', []),
+                result.get('company_culture', [])
+            )
+            
+            # Combine scores
+            match_score = (skill_match * 0.6) + (culture_match * 0.4)
+            
+            # Add match data to result
+            result['profile_match'] = {
+                'overall_score': match_score,
+                'skill_match': skill_match,
+                'culture_match': culture_match
+            }
+            
+            ranked_results.append(result)
+        
+        # Sort by match score
+        return sorted(ranked_results, key=lambda x: x['profile_match']['overall_score'], reverse=True)
+
+    def _calculate_skill_match(self, profile_skills: List[str], job_skills: List[str]) -> float:
+        """Calculate skill match score"""
+        if not profile_skills or not job_skills:
+            return 0.0
+            
+        profile_skills = set(s.lower() for s in profile_skills)
+        job_skills = set(s.lower() for s in job_skills)
+        
+        matches = len(profile_skills.intersection(job_skills))
+        return matches / len(job_skills) if job_skills else 0.0
+
+    def _calculate_culture_match(self, profile_culture: List[str], job_culture: List[str]) -> float:
+        """Calculate culture match score"""
+        if not profile_culture or not job_culture:
+            return 0.0
+            
+        profile_culture = set(c.lower() for c in profile_culture)
+        job_culture = set(c.lower() for c in job_culture)
+        
+        matches = len(profile_culture.intersection(job_culture))
+        return matches / len(job_culture) if job_culture else 0.0
+
 @lru_cache()
 def get_search_service(db: Session):
     """Initialize and return a JobSearchService instance"""
@@ -406,4 +580,4 @@ def get_search_service(db: Session):
     )
     
     # Create and return the search service
-    return JobSearchService(retriever=retriever, settings=settings)
+    return JobSearchService(retriever=retriever, settings=settings, db=db)

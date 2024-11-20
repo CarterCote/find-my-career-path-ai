@@ -225,12 +225,12 @@ export default function Try() {
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-            <div>
-              <p className="font-circular font-bold text-4xl tracking-tight mb-2">Skills</p>
-              <p className="font-circular font-medium text-xl tracking-tight "><span className="font-bold text-tertiaryBlue">Guiding Question: </span>What skills would I like to be using most at work?</p>
-              <p className="font-circular font-medium text-xl tracking-tight"><span className="font-bold text-tertiaryBlue">Action: </span>Sort the skills cards according to the level of enjoyment for you. Don’t worry about your skill level.</p>
+              <div>
+                <p className="font-circular font-bold text-4xl tracking-tight mb-2">Skills</p>
+                <p className="font-circular font-medium text-xl tracking-tight "><span className="font-bold text-tertiaryBlue">Guiding Question: </span>What skills would I like to be using most at work?</p>
+                <p className="font-circular font-medium text-xl tracking-tight"><span className="font-bold text-tertiaryBlue">Action: </span>Sort the skills cards according to the level of enjoyment for you. Don’t worry about your skill level.</p>
 
-            </div>
+              </div>
               <div className="flex flex-row space-x-4">
                 <div className="flex flex-col space-y-3 pt-4">
                   <div className="w-[100px] h-[100px] rounded-2xl bg-gray-700 flex items-center justify-center text-white font-bold">
@@ -248,20 +248,21 @@ export default function Try() {
                     onHighPrioritySkillsChange={(skills) => setStep3HighSkills(skills)}
                     onTopTenChange={setTopSkills}
                 />
+
+
               </div>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Instructions for Skills Sorting</DialogTitle>
-                  <DialogDescription>
-                    Take your time to sort each skill based on how much you enjoy using it. Don't worry about your current proficiency level - focus on what you'd like to be doing in your ideal role.
-                    
-                    Drag each card to the appropriate column (High, Medium, or Low) based on your level of enjoyment.
-                  </DialogDescription>
-                </DialogHeader>
-                <Button variant="secondary" onClick={() => setDialogOpen(false)}>Got it</Button>
-              </DialogContent>
-            </Dialog>
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Instructions for Skills Sorting</DialogTitle>
+                    <DialogDescription>
+                      Take your time to sort each skill based on how much you enjoy using it. Don't worry about your current proficiency level - focus on what you'd like to be doing in your ideal role.
+                      Drag each card to the appropriate column (High, Medium, or Low) based on your level of enjoyment.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Button variant="secondary" onClick={() => setDialogOpen(false)}>Got it</Button>
+                </DialogContent>
+              </Dialog>
 
               <div className="flex flex-row items-center w-full justify-between mt-8">
                 <Button variant="secondary" onClick={handleBack}>Back</Button>
