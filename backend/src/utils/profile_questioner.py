@@ -20,9 +20,9 @@ class ProfileQuestioner:
     def generate_questions(self, profile_data: Dict) -> List[str]:
         """Generate targeted questions based on user profile"""
         try:
-            print(f"Debug - Profile data: {profile_data}")  # Add debug logging
+            print("\n========== PROFILE QUESTIONER DEBUG ==========")
+            print(f"Function called with profile data: {profile_data}")
             
-            # Format the profile data for better prompt context
             formatted_profile = {
                 'core_values': profile_data.get('core_values', []),
                 'work_culture': profile_data.get('work_culture', []),
@@ -30,47 +30,37 @@ class ProfileQuestioner:
                 'additional_interests': profile_data.get('additional_interests', '')
             }
             
-            system_prompt = (
-                "You are a career guidance expert. Generate personalized questions based on the user's profile. "
-                "Your response must be a valid JSON array of strings containing 3-4 questions. "
-                'Example format: ["question 1?", "question 2?", "question 3?"]'
-            )
+            print("\nFormatted profile:")
+            print("================")
+            print(f"Core Values: {', '.join(formatted_profile['core_values'])}")
+            print(f"Work Culture: {', '.join(formatted_profile['work_culture'])}")
+            print(f"Skills: {', '.join(formatted_profile['skills'])}")
+            print(f"Additional Interests: {formatted_profile['additional_interests']}")
+            print("================")
             
-            user_prompt = f"""Based on this profile, generate specific follow-up questions:
-Core Values: {', '.join(str(v) for v in formatted_profile['core_values'])}
-Work Culture: {', '.join(str(v) for v in formatted_profile['work_culture'])}
-Skills: {', '.join(str(v) for v in formatted_profile['skills'])}
-Additional Interests: {formatted_profile['additional_interests']}
+            messages = [
+                {"role": "system", "content": QUESTION_GENERATION.format(
+                    core_values=', '.join(formatted_profile['core_values']),
+                    work_culture=', '.join(formatted_profile['work_culture']),
+                    skills=', '.join(formatted_profile['skills']),
+                    additional_interests=formatted_profile['additional_interests']
+                )}
+            ]
 
-Focus your questions on:
-1. Specific applications of their listed skills
-2. How their values align with potential roles
-3. Their work culture preferences
-4. Their career interests
-
-Return ONLY a JSON array of questions."""
+            print(f"\nDebug - Final prompt being sent to LLM:\n{messages[0]['content']}")
             
-            response = self.llm.chat([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ])
+            # Use generate instead of chat
+            response = self.llm.generate([messages])
+            print(f"\nDebug - Raw LLM response: {response}")
             
-            print(f"Debug - LLM response: {response.content}")  # Add debug logging
+            # Extract the content from the response
+            content = response.generations[0][0].text.strip()
             
-            # Clean the response content to handle potential formatting
-            content = response.content.strip()
-            if not content.startswith('['):
-                content = content.split('[', 1)[-1]
-            if not content.endswith(']'):
-                content = content.split(']')[0] + ']'
+            # Parse the numbered list into questions
+            questions = [q.strip() for q in content.split('\n') if '?' in q]
             
-            try:
-                questions = json.loads(content)
-                if isinstance(questions, list):
-                    return questions
-            except json.JSONDecodeError as e:
-                print(f"JSON parsing error: {str(e)}")
-                print(f"Raw content: {content}")
+            if len(questions) == 4:
+                return questions
             
             # If we get here, fall back to text parsing
             default_questions = [

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ...database import get_db
-from ...utils.job_search import get_search_service
+from ...dependencies import get_search_service
 
 # Move these models to a new file later if they grow more complex
 class JobSearchFilters(BaseModel):

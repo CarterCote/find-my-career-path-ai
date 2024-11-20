@@ -11,14 +11,14 @@ Consider:
 5. Communication style
 6. Leadership approach
 
-Return as JSON with these fields:
+Return ONLY a JSON object with these exact fields:
 {
-    "skills": [],
-    "values": [],
-    "work_preferences": [],
-    "experience_level": "",
-    "career_goals": [],
-    "communication_style": ""
+    "skills": ["skill1", "skill2"],
+    "values": ["value1", "value2"],
+    "work_preferences": ["pref1", "pref2"],
+    "experience_level": "string",
+    "career_goals": ["goal1", "goal2"],
+    "communication_style": "string"
 }
 """
 
@@ -34,21 +34,20 @@ Consider:
 3. Culture fit (0-10)
 4. Growth potential (0-10)
 
-Provide specific reasoning for each score.
-Return as JSON with these fields:
+Return ONLY a JSON object with these exact fields:
 {
-    "skills_alignment": 0,
-    "values_compatibility": 0,
-    "culture_fit": 0,
-    "growth_potential": 0,
+    "skills_alignment": 7,
+    "values_compatibility": 8,
+    "culture_fit": 6,
+    "growth_potential": 9,
     "reasoning": {
-        "skills": "",
-        "values": "",
-        "culture": "",
-        "growth": ""
+        "skills": "string explanation",
+        "values": "string explanation",
+        "culture": "string explanation",
+        "growth": "string explanation"
     },
-    "skill_gaps": [],
-    "culture_fit_details": []
+    "skill_gaps": ["gap1", "gap2"],
+    "culture_fit_details": ["detail1", "detail2"]
 }
 """
 

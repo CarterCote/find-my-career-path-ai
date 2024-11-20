@@ -3,7 +3,7 @@ from .celery import app
 from typing import Dict, List
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
-from ..utils.job_search import JobSearchService, get_search_service
+from ..dependencies import get_search_service
 
 @app.task
 def process_search_results(results: List[Dict], query: str, session_id: str) -> List[Dict]:

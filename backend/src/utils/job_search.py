@@ -21,27 +21,34 @@ from sentence_transformers import SentenceTransformer
 from .profile_questioner import ProfileQuestioner
 from ..prompts.job_search_prompts import SYSTEM_PROMPT, FOLLOWUP_PROMPT
 from ..prompts.search_prompts import SEARCH_ENHANCEMENT
+from ..evaluation.persona_agent import CareerPersonaAgent
+from ..evaluation.metrics import RecommendationMetrics
 
 import json
 
 class JobSearchService:
     def __init__(self, retriever, settings, db: Session):
+        print("\n========== JOB SEARCH SERVICE INIT DEBUG ==========")
+        print("1. Initializing JobSearchService")
         self.retriever = retriever
         self.db = db
         self.store = {}
         
         # Initialize OpenAI chat
         self.llm = ChatOpenAI(
-            temperature=0.7,  # Increased for more natural conversation
+            temperature=0.7,
             model_name="gpt-4-turbo-preview",
             api_key=settings.openai_api_key
         )
+        print("2. OpenAI chat initialized")
         
         # Initialize profile questioner
         self.profile_questioner = ProfileQuestioner(settings)
+        print("3. ProfileQuestioner initialized")
         
         # Add a state tracker for question-answer flow
         self.qa_state = {}
+        print("4. JobSearchService initialization complete")
         
         # Your system prompt
         self.system_prompt = SYSTEM_PROMPT
@@ -81,97 +88,105 @@ class JobSearchService:
     def chat(self, message: str, session_id: str = "default") -> Dict:
         """Handle chat interactions including Q&A flow"""
         try:
-            print(f"\nDebug - Chat called with message: {message}")
+            print("\n========== JOB SEARCH SERVICE CHAT DEBUG ==========")
+            print(f"1. Chat method called with message: {message}")
             
-            # Initialize Q&A state if this is the first question
-            if message.lower() == "based on my profile, what specific questions should i answer to help refine my job search?":
-                print("Debug - Starting new Q&A session")
+            state = self.qa_state.get(session_id)
+            
+            # Initialize state if first message
+            if not state:
                 user_profile = self.db.query(UserProfile).filter(
                     UserProfile.session_id == session_id
                 ).first()
                 
-                print(f"Debug - Retrieved user profile: {user_profile.__dict__ if user_profile else None}")
-                
-                if user_profile:
-                    # Convert UserProfile model to dictionary with the expected keys
-                    profile_data = {
-                        'core_values': user_profile.core_values,
-                        'work_culture': user_profile.work_culture,
-                        'skills': user_profile.skills,
-                        'additional_interests': user_profile.additional_interests
-                    }
-                    
-                    print(f"Debug - Formatted profile data: {profile_data}")
-                    
-                    # Generate dynamic questions based on formatted profile
-                    questions = self.profile_questioner.generate_questions(profile_data)
-                    
-                    print(f"Debug - Generated questions: {questions}")
-                    
-                    if not questions:
-                        print("Debug - No questions generated, falling back to defaults")
-                        return {
-                            "response": "What specific technical skills are most important for your ideal role?",
-                            "session_id": session_id
-                        }
-                    
-                    self.qa_state[session_id] = {
-                        "questions": questions,
-                        "current_index": 0,
-                        "answers": [],
-                        "complete": False
-                    }
-                    
+                if not user_profile:
                     return {
-                        "response": questions[0],
-                        "session_id": session_id,
-                        "questions": questions
+                        "response": "Please create a profile first",
+                        "session_id": session_id
                     }
-            
-            # Handle ongoing Q&A session
-            if session_id in self.qa_state and not self.qa_state[session_id]["complete"]:
-                state = self.qa_state[session_id]
                 
-                # Store the answer to the current question
+                # Generate questions based on profile
+                questions = self.profile_questioner.generate_questions({
+                    'core_values': user_profile.core_values or [],
+                    'work_culture': user_profile.work_culture or [],
+                    'skills': user_profile.skills or [],
+                    'additional_interests': user_profile.additional_interests or ''
+                })
+                
+                state = {
+                    "questions": questions,
+                    "answers": [],
+                    "current_index": 0,
+                    "complete": False
+                }
+                self.qa_state[session_id] = state
+                
+                print("Debug - Initialized new Q&A session")
+                print(f"Debug - First question: {questions[0]}")
+                
+                return {
+                    "response": questions[0],
+                    "session_id": session_id
+                }
+            
+            # Handle ongoing Q&A
+            if not state["complete"]:
+                # Store answer
                 state["answers"].append({
                     "question": state["questions"][state["current_index"]],
                     "answer": message
                 })
+                print(f"Debug - Stored answer {len(state['answers'])} of {len(state['questions'])}")
                 
-                # Move to next question
                 state["current_index"] += 1
                 
-                # Check if we have more questions
+                # More questions to ask
                 if state["current_index"] < len(state["questions"]):
+                    next_question = state["questions"][state["current_index"]]
+                    print(f"Debug - Asking question {state['current_index'] + 1} of {len(state['questions'])}")
                     return {
-                        "response": state["questions"][state["current_index"]],
+                        "response": next_question,
                         "session_id": session_id
                     }
-                else:
-                    # Q&A is complete, process answers into search parameters
-                    state["complete"] = True
-                    search_params = self._process_qa_answers(state["answers"])
-                    
-                    # Perform search with accumulated parameters
-                    results = self.search(
-                        query=self._build_search_query(search_params),
-                        db=self.db,
-                        session_id=session_id
-                    )
+                
+                # Q&A complete, update profile
+                state["complete"] = True
+                print("Debug - Q&A complete, updating profile")
+                
+                qa_summary = "; ".join([
+                    f"Q: {qa['question']} A: {qa['answer']}"
+                    for qa in state["answers"]
+                ])
+                
+                try:
+                    # Update user profile
+                    user_profile = self.db.query(UserProfile).filter(
+                        UserProfile.session_id == session_id
+                    ).first()
+                    user_profile.additional_interests = qa_summary
+                    self.db.commit()
+                    print("Debug - Updated user profile with Q&A summary")
                     
                     return {
-                        "response": "Based on your answers, I've found some matching jobs. Would you like to see them?",
+                        "response": "Thank you for answering all questions! You can now get personalized job recommendations using /users/recommendations/{session_id}",
                         "session_id": session_id,
-                        "jobs": results
+                        "qa_complete": True
+                    }
+                    
+                except Exception as e:
+                    print(f"Error updating profile: {str(e)}")
+                    return {
+                        "response": "Error updating profile with your answers.",
+                        "session_id": session_id
                     }
             
-            # Fall back to regular chat if no active Q&A session
+            # Regular chat after Q&A
             return self._handle_regular_chat(message, session_id)
-                
+            
         except Exception as e:
             print(f"Error in chat: {str(e)}")
             return {
-                "response": "I apologize, but I'm having trouble. Could you try asking your question again?",
+                "response": "I encountered an error. Please try again.",
                 "session_id": session_id
             }
 
@@ -247,10 +262,29 @@ class JobSearchService:
                 - Goals: {user_profile.goals}
                 """
             
+            # Add evaluation if user profile exists
+            if user_profile:
+                evaluation_results = self.evaluate_recommendations(
+                    recommendations=formatted_results,
+                    user_profile={
+                        'skills': user_profile.skills,
+                        'core_values': user_profile.core_values,
+                        'work_culture': user_profile.work_culture,
+                        'additional_interests': user_profile.additional_interests
+                    }
+                )
+                return {
+                    'jobs': formatted_results,
+                    'session_id': session_id,
+                    'user_context': user_context,
+                    'evaluation': evaluation_results
+                }
+            
             return {
                 "jobs": formatted_results,
                 "session_id": session_id,
-                "user_context": user_context if user_profile else None
+                "user_context": user_context if user_profile else None,
+                "evaluation_results": {}
             }
                 
         except Exception as e:
@@ -564,20 +598,63 @@ class JobSearchService:
         matches = len(profile_culture.intersection(job_culture))
         return matches / len(job_culture) if job_culture else 0.0
 
-@lru_cache()
-def get_search_service(db: Session):
-    """Initialize and return a JobSearchService instance"""
-    settings = get_settings()
+    def evaluate_recommendations(self, recommendations: List[Dict], user_profile: Dict) -> Dict:
+        """Evaluate recommendations using persona-based evaluation"""
+        evaluation_results = []
+        
+        for rec in recommendations:
+            try:
+                # Create persona agent for this job
+                agent = CareerPersonaAgent(rec, self.llm)
+                
+                # Get evaluation from persona perspective
+                evaluation = agent.evaluate_profile_match(user_profile)
+                
+                # Compare with system's match score
+                system_score = rec.get('match_score', 0)
+                
+                # Calculate persona score from evaluation metrics
+                scores = [
+                    evaluation.get('skills_alignment', 0),
+                    evaluation.get('values_compatibility', 0),
+                    evaluation.get('culture_fit', 0),
+                    evaluation.get('growth_potential', 0)
+                ]
+                persona_score = sum(scores) / (len(scores) * 10)  # Convert 0-10 scale to 0-1
+                
+                evaluation_results.append({
+                    'job_id': rec.get('job_id', ''),
+                    'title': rec.get('title', ''),
+                    'system_score': system_score,
+                    'persona_score': persona_score,
+                    'detailed_evaluation': evaluation,
+                    'score_delta': abs(system_score - persona_score)
+                })
+            except Exception as e:
+                print(f"Error evaluating recommendation: {str(e)}")
+                continue
+        
+        return {
+            'evaluations': evaluation_results,
+            'metrics': RecommendationMetrics.aggregate_scores(
+                [e['detailed_evaluation'] for e in evaluation_results]
+            ) if evaluation_results else {}
+        }
+
+# @lru_cache()
+# def get_search_service(db: Session):
+#     """Initialize and return a JobSearchService instance"""
+#     settings = get_settings()
     
-    # Initialize the model using the name from settings
-    embed_model = SentenceTransformer(settings.embed_model_name)
+#     # Initialize the model using the name from settings
+#     embed_model = SentenceTransformer(settings.embed_model_name)
     
-    # Initialize the retriever with the model instance
-    retriever = JobSearchRetriever(
-        db=db,
-        embed_model=embed_model,  # Pass the initialized model
-        strategy=SearchStrategy.SEMANTIC
-    )
+#     # Initialize the retriever with the model instance
+#     retriever = JobSearchRetriever(
+#         db=db,
+#         embed_model=embed_model,  # Pass the initialized model
+#         strategy=SearchStrategy.SEMANTIC
+#     )
     
-    # Create and return the search service
-    return JobSearchService(retriever=retriever, settings=settings, db=db)
+#     # Create and return the search service
+#     return JobSearchService(retriever=retriever, settings=settings, db=db)
