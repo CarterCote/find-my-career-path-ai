@@ -1,5 +1,6 @@
 import requests
 import json
+import random
 
 def display_evaluations(evaluations_data):
     """Helper function to display evaluation results consistently"""
@@ -47,11 +48,63 @@ def display_evaluations(evaluations_data):
         print("No evaluation results available")
 
 def chat():
-    session_id = "test-session"
+    print("\nCareer Path AI Assistant")
+    print("-" * 50)
+    print("1. Create new profile")
+    print("2. Access existing profile")
+    choice = input("\nEnter your choice (1 or 2): ")
+
+    if choice == "2":
+        # Get existing profiles
+        response = requests.get('http://127.0.0.1:8000/users/profiles')
+        if response.status_code == 200:
+            profiles = response.json()
+            if not profiles:
+                print("\nNo existing profiles found.")
+                return
+                
+            print("\nExisting Profiles:")
+            for profile in profiles:
+                print(f"ID: {profile['id']} - Session: {profile['user_session_id']}")
+            
+            profile_id = input("\nEnter profile ID to access: ")
+            
+            # Get recommendations for existing profile
+            rec_response = requests.get(f'http://127.0.0.1:8000/users/profile/{profile_id}/recommendations')
+            if rec_response.status_code == 200:
+                recommendations = rec_response.json()
+                print("\nExisting Job Recommendations:")
+                print("-" * 50)
+                
+                # Enhanced recommendation display
+                for job in recommendations:
+                    print(f"\nJob Title: {job['title']}")
+                    print(f"Company: {job['company_name']}")
+                    print(f"Match Score: {job['match_score']:.2f}")
+                    print(f"Type: {job['recommendation_type']}")
+                    print(f"Job ID: {job['job_id']}")
+                    print(f"Created: {job['created_at']}")
+                    print("-" * 30)
+                
+                # Ask if user wants to start a new chat session
+                new_chat = input("\nWould you like to start a new chat session? (y/n): ")
+                if new_chat.lower() == 'y':
+                    # Generate a new chat session ID for this user
+                    chat_session_id = f"chat-{random.randint(1000, 9999999)}"
+                    print(f"\nStarting new chat session: {chat_session_id}")
+                    # Continue with chat...
+                else:
+                    return
+            else:
+                print("\nError retrieving recommendations:", rec_response.status_code)
+            return
+            
+    # Existing flow for new profile creation
+    chat_session_id = f"session-{random.randint(1000, 9999999)}"
     
     # Your profile JSON
     profile_data = {
-        "session_id": session_id,
+        "user_session_id": chat_session_id,
         "core_values": [
             "integrity", "personal development", "impact", "creativity",
             "excellence", "intellectual challenge", "learning", "autonomy",
@@ -92,13 +145,13 @@ def chat():
     
     print(f"\nDebug - About to make POST request to /chat with:")
     print(f"message: {initial_message}")
-    print(f"session_id: {session_id}")
+    print(f"chat_session_id: {chat_session_id}")
     
     questions_response = requests.post(
         'http://127.0.0.1:8000/chat',
         params={
             "message": initial_message,
-            "session_id": session_id
+            "chat_session_id": chat_session_id
         }
     )
     
@@ -132,7 +185,7 @@ def chat():
                 'http://127.0.0.1:8000/chat',
                 params={
                     "message": answer,
-                    "session_id": session_id
+                    "chat_session_id": chat_session_id
                 }
             )
             
@@ -148,7 +201,7 @@ def chat():
     if qa_complete:
         print("\nFetching job recommendations...")
         recommendations_response = requests.get(
-            f'http://127.0.0.1:8000/users/recommendations/{session_id}'
+            f'http://127.0.0.1:8000/users/recommendations/{chat_session_id}'
         )
         
         if recommendations_response.status_code == 200:
@@ -169,39 +222,20 @@ def chat():
             # Handle evaluations if present
             if 'evaluation' in recommendations:
                 display_evaluations(recommendations['evaluation'])
+            
+            # Ask user what to do next
+            while True:
+                choice = input("\nWhat would you like to do?\n1. Start new profile\n2. Exit\nYour choice (1 or 2): ")
+                if choice == "1":
+                    chat()  # Recursively start a new session
+                    break
+                elif choice == "2":
+                    print("\nThank you for using Career Path AI Assistant!")
+                    return
+                else:
+                    print("\nInvalid choice. Please enter 1 or 2.")
         else:
             print("\nError getting recommendations:", recommendations_response.status_code)
-    
-    # Continue with regular chat
-    print("\nCareer Path AI Assistant (type 'quit' to exit)")
-    print("-" * 50)
-    
-    while True:
-        query = input("\nYou: ")
-        if query.lower() == 'quit':
-            break
-            
-        response = requests.post(
-            'http://127.0.0.1:8000/chat',
-            params={
-                "message": query,
-                "session_id": session_id
-            }
-        )
-        
-        if response.status_code == 200:
-            try:
-                result = response.json()
-                print("\nAssistant:", result.get('response', 'No response found'))
-                
-                # Display evaluations if present in chat response
-                if 'evaluation' in result:
-                    display_evaluations(result['evaluation'])
-                    
-            except json.JSONDecodeError:
-                print("\nError: Could not parse JSON response")
-        else:
-            print("\nError:", response.status_code, response.text)
 
 if __name__ == "__main__":
     chat()

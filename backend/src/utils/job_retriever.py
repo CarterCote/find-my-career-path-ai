@@ -56,10 +56,10 @@ class JobSearchRetriever(BaseRetriever):
                 query = "software engineer"
             
             # Convert query to embedding
-            query_embedding = self.embed_model.encode(query) 
+            query_embedding = self.embed_model.encode(query)
             
-            # Build the base SQL with direct string formatting
-            sql = f"""
+            # Build the base SQL using bindparams for vector comparison
+            sql = """
             WITH ranked_jobs AS (
                 SELECT 
                     job_id,
@@ -69,54 +69,58 @@ class JobSearchRetriever(BaseRetriever):
                     location,
                     min_salary,
                     max_salary,
-                    1 - (description_embedding <-> '{str(query_embedding.tolist())}'::vector) AS semantic_score,
-                    ts_rank(to_tsvector('english', description), plainto_tsquery('english', '{query}')) AS text_score
+                    1 - (description_embedding <=> array_to_vector(:query_embedding)) AS semantic_score,
+                    ts_rank(to_tsvector('english', description), plainto_tsquery('english', :query)) AS text_score
                 FROM postings
                 WHERE 1=1
             """
             
-            # Add filter conditions
-            if filters.get('min_salary'):
-                sql += f" AND min_salary >= {filters['min_salary']}"
-            if filters.get('location'):
-                location = filters['location'].replace("'", "''")  # Escape single quotes
-                sql += f" AND location ILIKE '%{location}%'"
+            params = {
+                'query_embedding': query_embedding.tolist(),  # Convert numpy array to list
+                'query': query,
+                'limit': filters.get('limit', 100)
+            }
+            
+            # Add job_ids filter if present
+            if 'job_ids' in filters and filters['job_ids']:
+                sql += " AND job_id = ANY(:job_ids)"
+                params['job_ids'] = filters['job_ids']
             
             # Complete the query
-            sql += f"""
+            sql += """
                 )
-                SELECT 
-                    job_id,
-                    title,
-                    company_name,
-                    description,
-                    location,
-                    min_salary,
-                    max_salary,
-                    semantic_score,
-                    text_score
+                SELECT *
                 FROM ranked_jobs
                 ORDER BY (semantic_score + text_score) DESC
-                LIMIT {filters.get('limit', 10)}
+                LIMIT :limit
             """
             
-            # Execute the raw SQL
-            results = self.db.execute(text(sql)).fetchall()
+            # Create SQLAlchemy text object with parameters
+            stmt = text(sql)
+            for key, value in params.items():
+                stmt = stmt.bindparams(bindparam(key, value))
+            
+            results = self.db.execute(stmt).fetchall()
             formatted_results = self._format_results(results)
             
             # Add title relevance scores
             for job in formatted_results:
                 title_score = self._check_title_relevance(job['title'], query)
                 job['title_match_score'] = title_score
-                # Adjust overall relevance score to include title matching
-                job['relevance_score'] = (job['relevance_score'] + title_score) / 2
+                # Combine semantic, text, and title scores
+                job['relevance_score'] = (
+                    job.get('semantic_score', 0.0) + 
+                    job.get('text_score', 0.0) + 
+                    title_score
+                ) / 3
             
             return formatted_results
             
         except Exception as e:
             print(f"Error in semantic search: {str(e)}")
-            print(f"SQL Query: {sql}")  # Debug print
-            raise
+            import traceback
+            print(f"Traceback:\n{traceback.format_exc()}")
+            return []
     
     def _format_results(self, results):
         """Format database results into a consistent structure"""
@@ -159,63 +163,90 @@ class JobSearchRetriever(BaseRetriever):
         return formatted
     
     def sparse_search(self, query: str, filters: Dict = None):
-        """Quick text-based search with hard constraints"""
+        """Perform sparse (keyword-based) search"""
         try:
-            # Break down query into individual terms
-            if filters and filters.get('required_skills'):
-                required_terms = filters['required_skills']
-                print(f"Searching for required terms: {required_terms}")
-                
-                # Construct WHERE clauses for each required term
-                where_clauses = []
-                params = {}
-                
-                for idx, term in enumerate(required_terms):
-                    param_name = f"term_{idx}"
-                    where_clauses.append(f"""
-                        (
-                            description ILIKE :%{param_name}% OR
-                            title ILIKE :%{param_name}% OR
-                            EXISTS (
-                                SELECT 1 
-                                FROM jsonb_array_elements_text(structured_description->'required_skills') skill
-                                WHERE skill ILIKE :%{param_name}%
-                            )
-                        )
-                    """)
-                    params[param_name] = term
-                
-                sql = """
+            print("\n========== SPARSE SEARCH DEBUG ==========")
+            filters = filters or {}
+            required_terms = []
+            
+            # Extract search terms from filters
+            if 'skills' in filters:
+                required_terms.extend(filters['skills'])
+            if 'work_culture' in filters:
+                required_terms.extend(filters['work_culture'])
+            if 'core_values' in filters:
+                required_terms.extend(filters['core_values'])
+            
+            print(f"1. Required terms for sparse search: {required_terms}")
+            
+            # Format terms for tsquery
+            formatted_terms = []
+            for term in required_terms:
+                if ' ' in term:
+                    # For multi-word terms, connect words with &
+                    formatted_term = '&'.join(term.split())
+                else:
+                    formatted_term = term
+                formatted_terms.append(formatted_term)
+            
+            query_string = ' | '.join(formatted_terms)
+            print(f"2. Formatted query string: {query_string}")
+            
+            # Build SQL query for sparse search
+            sql = """
+            WITH job_matches AS (
                 SELECT 
-                    *,
-                    ts_rank(
-                        to_tsvector('english', title || ' ' || description), 
-                        to_tsquery('english', :query_terms)
-                    ) AS relevance
-                FROM postings
-                WHERE 1=1
-                AND {}
-                """.format(' AND '.join(where_clauses))
-                
-                # Add other filters
-                if filters.get('work_environment'):
-                    sql += " AND structured_description->>'work_environment' ILIKE :work_env"
-                    params['work_env'] = f"%{filters['work_environment']}%"
-                
-                sql += " ORDER BY relevance DESC LIMIT :limit"
-                params.update({
-                    'query_terms': ' | '.join(required_terms),
-                    'limit': filters.get('limit', 100)
-                })
-                
-                print(f"Executing sparse search with params: {params}")
-                results = self.db.execute(text(sql), params).fetchall()
-                print(f"Found {len(results)} results in sparse search")
-                
-                return results
-                
+                    p.*,
+                    ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                           to_tsquery('english', :query_terms)) as text_score
+                FROM postings p
+                WHERE to_tsvector('english', p.description || ' ' || p.title) @@ to_tsquery('english', :query_terms)
+                ORDER BY text_score DESC
+                LIMIT :limit
+            )
+            SELECT 
+                job_id,
+                title,
+                company_name,
+                description,
+                location,
+                min_salary,
+                max_salary,
+                text_score
+            FROM job_matches
+            """
+            
+            params = {
+                'query_terms': query_string,
+                'limit': filters.get('limit', 100)
+            }
+            
+            print(f"3. Executing sparse search...")
+            results = self.db.execute(text(sql), params).fetchall()
+            print(f"4. Found {len(results)} results in sparse search")
+            
+            # Convert results to list of dicts
+            formatted_results = []
+            for row in results:
+                job_dict = {
+                    'job_id': row.job_id,
+                    'title': row.title,
+                    'company_name': row.company_name,
+                    'description': row.description,
+                    'location': row.location,
+                    'min_salary': row.min_salary,
+                    'max_salary': row.max_salary,
+                    'relevance_score': float(row.text_score)  # Convert Decimal to float
+                }
+                formatted_results.append(job_dict)
+            
+            print("=" * 50)
+            return formatted_results
+            
         except Exception as e:
             print(f"Error in sparse search: {str(e)}")
+            import traceback
+            print(f"Traceback:\n{traceback.format_exc()}")
             return []
     
     def hybrid_search(self, query: str, filters: Dict = None):

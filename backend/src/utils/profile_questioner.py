@@ -38,23 +38,25 @@ class ProfileQuestioner:
             print(f"Additional Interests: {formatted_profile['additional_interests']}")
             print("================")
             
-            messages = [
-                {"role": "system", "content": QUESTION_GENERATION.format(
+            messages = [{
+                "role": "system", 
+                "content": QUESTION_GENERATION.format(
                     core_values=', '.join(formatted_profile['core_values']),
                     work_culture=', '.join(formatted_profile['work_culture']),
                     skills=', '.join(formatted_profile['skills']),
                     additional_interests=formatted_profile['additional_interests']
-                )}
-            ]
+                )
+            }]
 
             print(f"\nDebug - Final prompt being sent to LLM:\n{messages[0]['content']}")
             
-            # Use generate instead of chat
-            response = self.llm.generate([messages])
+            # Use invoke instead of chat
+            response = self.llm.invoke(messages)
             print(f"\nDebug - Raw LLM response: {response}")
             
-            # Extract the content from the response
-            content = response.generations[0][0].text.strip()
+            # Extract content from the response
+            content = response.content if hasattr(response, 'content') else str(response)
+            content = content.strip()
             
             # Parse the numbered list into questions
             questions = [q.strip() for q in content.split('\n') if '?' in q]
@@ -88,24 +90,30 @@ class ProfileQuestioner:
     def process_response(self, question: str, response: str) -> Dict:
         """Process user's natural language response into structured search parameters"""
         try:
-            result = self.llm.chat([{
-                "role": "system",
-                "content": "You are a data structuring assistant. Always respond with a valid JSON object."
-            }, {
-                "role": "user",
-                "content": f"""Convert this response into search parameters:
-                    Question: {question}
-                    Response: {response}
-                    
-                    Return EXACTLY like this example:
-                    {{
-                        "required_skills": ["python", "aws"],
-                        "work_environment": "startup",
-                        "experience_years": 3,
-                        "team_size": "small",
-                        "industry": "technology"
-                    }}"""
-            }])
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a data structuring assistant. Always respond with a valid JSON object."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Convert this response into search parameters:
+                        Question: {question}
+                        Response: {response}
+                        
+                        Return EXACTLY like this example:
+                        {{
+                            "required_skills": ["python", "aws"],
+                            "work_environment": "startup",
+                            "experience_years": 3,
+                            "team_size": "small",
+                            "industry": "technology"
+                        }}"""
+                }
+            ]
+            
+            # Use invoke instead of chat
+            result = self.llm.invoke(messages)
             
             # Clean and parse response
             content = result.content.strip()

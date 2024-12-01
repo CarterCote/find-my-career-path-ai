@@ -3,6 +3,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 class UserProfileBase(BaseModel):
+    user_session_id: str
     core_values: Optional[List[str]] = None
     work_culture: Optional[List[str]] = None
     skills: Optional[List[str]] = None
@@ -10,15 +11,17 @@ class UserProfileBase(BaseModel):
     additional_interests: Optional[str] = None
     background: Optional[str] = None
     goals: Optional[str] = None
+    preference_version: Optional[int] = 1
 
 class UserProfileCreate(UserProfileBase):
-    session_id: str
+    pass
 
 class UserProfile(UserProfileBase):
     id: int
-    session_id: str
     created_at: datetime
-    
+    updated_at: datetime
+    last_preference_update: datetime
+
     class Config:
         from_attributes = True
 
@@ -27,11 +30,13 @@ class ChatMessageBase(BaseModel):
     is_user: bool
 
 class ChatMessageCreate(ChatMessageBase):
-    session_id: str
+    chat_session_id: str
+    user_id: int
 
 class ChatMessage(ChatMessageBase):
     id: int
-    session_id: str
+    user_id: int
+    chat_session_id: str
     created_at: datetime
 
     class Config:
@@ -42,11 +47,31 @@ class CareerRecommendationBase(BaseModel):
     reasoning: str
 
 class CareerRecommendationCreate(CareerRecommendationBase):
-    session_id: str
+    user_session_id: str
 
 class CareerRecommendation(CareerRecommendationBase):
     id: int
-    session_id: str
+    user_session_id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class JobRecommendationBase(BaseModel):
+    job_id: str
+    title: Optional[str] = None
+    company_name: Optional[str] = None
+    match_score: Optional[float] = None
+    recommendation_type: Optional[str] = None
+
+class JobRecommendationCreate(JobRecommendationBase):
+    user_id: int
+    chat_session_id: str
+
+class JobRecommendation(JobRecommendationBase):
+    id: int
+    user_id: int
+    chat_session_id: str
     created_at: datetime
 
     class Config:

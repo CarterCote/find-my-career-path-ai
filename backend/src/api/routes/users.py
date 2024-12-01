@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
+from datetime import datetime
 from ...database import get_db
 from ...crud import create_user_profile, get_user_profile
-from ...dependencies import get_search_service
-from ...dependencies import get_settings
+from ...dependencies import get_search_service, get_settings
 from ...utils.job_retriever import SearchStrategy
+from ...models import UserProfile, JobRecommendation as DBJobRecommendation
 
 router = APIRouter(
     prefix="/users",
@@ -14,8 +15,34 @@ router = APIRouter(
 )
 
 # Request/Response Models
+class UserProfileResponse(BaseModel):
+    id: int
+    user_session_id: str
+    core_values: List[str]
+    work_culture: List[str]
+    skills: List[str]
+    additional_interests: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class JobRecommendationResponse(BaseModel):
+    id: int
+    user_session_id: str
+    job_id: str
+    title: str
+    company_name: str
+    match_score: float
+    recommendation_type: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class UserPreferences(BaseModel):
-    session_id: str
+    user_session_id: str
     core_values: List[str]
     work_culture: List[str]
     skills: List[str]
@@ -23,7 +50,7 @@ class UserPreferences(BaseModel):
 
 class ProfileResponse(BaseModel):
     message: str
-    session_id: str
+    user_session_id: str
 
 class JobRecommendation(BaseModel):
     job_id: str
@@ -35,12 +62,15 @@ class JobRecommendation(BaseModel):
     matching_skills: List[str]
     matching_culture: List[str]
     location: Optional[str] = None
+    user_id: int
+    recommendation_type: str
+    preference_version: int
 
 class RecommendationResponse(BaseModel):
     recommendations: List[JobRecommendation]
-    session_id: str
+    user_session_id: str
 
-# Endpoints
+# Endpoints - Reorder these routes
 @router.post("/preferences", response_model=ProfileResponse)
 async def create_user_preferences(
     preferences: UserPreferences,
@@ -50,7 +80,7 @@ async def create_user_preferences(
     try:
         user_profile = create_user_profile(
             db=db,
-            session_id=preferences.session_id
+            user_session_id=preferences.user_session_id
         )
         
         user_profile.core_values = preferences.core_values
@@ -63,111 +93,126 @@ async def create_user_preferences(
         
         return ProfileResponse(
             message="Profile created successfully",
-            session_id=preferences.session_id
+            user_session_id=preferences.user_session_id
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/recommendations/{session_id}", response_model=RecommendationResponse)
-async def get_recommendations(
-    session_id: str,
+@router.get("/profiles", response_model=List[UserProfileResponse])
+async def get_profiles(db: Session = Depends(get_db)):
+    """Get all user profiles"""
+    return db.query(UserProfile).all()
+
+@router.get("/profile/{profile_id}/recommendations", response_model=List[JobRecommendationResponse])
+async def get_profile_recommendations(
+    profile_id: int,
     db: Session = Depends(get_db)
 ):
-    """Generate job recommendations based on profile and Q&A"""
+    """Get recommendations for a specific profile"""
+    profile = db.query(UserProfile).filter(UserProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+        
+    recommendations = db.query(DBJobRecommendation)\
+        .filter(DBJobRecommendation.user_session_id == profile.user_session_id)\
+        .order_by(DBJobRecommendation.created_at.desc())\
+        .all()
+        
+    return recommendations
+
+@router.get("/recommendations/{user_session_id}", response_model=RecommendationResponse)
+async def get_recommendations(
+    user_session_id: str,
+    db: Session = Depends(get_db)
+):
     try:
-        user_profile = get_user_profile(db=db, session_id=session_id)
+        # Get user profile first
+        user_profile = get_user_profile(db=db, user_session_id=user_session_id)
         if not user_profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
+        # Get the search service instance
         search_service = get_search_service(db)
-        search_service.retriever.strategy = SearchStrategy.HYBRID
         
-        # Construct context query using both hard and soft constraints
-        context_query = f"""
-        Looking for jobs that match these skills: {', '.join(user_profile.skills)}
-        with work culture preferences: {', '.join(user_profile.work_culture)}
-        and values: {', '.join(user_profile.core_values)}
-        Additional context from Q&A: {user_profile.additional_interests or ''}
-        """
+        # Check for stored recommendations
+        stored_recs = db.query(DBJobRecommendation)\
+            .filter(
+                DBJobRecommendation.user_id == user_profile.id,
+                DBJobRecommendation.chat_session_id == user_session_id
+            )\
+            .order_by(DBJobRecommendation.match_score.desc())\
+            .all()
         
+        if stored_recs:
+            # Convert stored recommendations to response format
+            recommendations = [JobRecommendation(
+                job_id=rec.job_id,
+                title=rec.title,
+                company_name=rec.company_name,
+                description="",  # We can add this if needed
+                salary_range=None,  # We can add this if needed
+                match_score=float(rec.match_score),
+                matching_skills=rec.matching_skills or [],
+                matching_culture=rec.matching_culture or [],
+                location=rec.location,
+                user_id=rec.user_id,
+                recommendation_type=rec.recommendation_type,
+                preference_version=rec.preference_version
+            ) for rec in stored_recs]
+            
+            return RecommendationResponse(
+                recommendations=recommendations,
+                user_session_id=user_session_id
+            )
+        
+        # If no stored recommendations, generate new ones
+        context_query = f"Looking for jobs that match these skills: {', '.join(user_profile.skills or [])}"
         results = search_service.search(
             query=context_query,
             db=db,
-            session_id=session_id
+            user_session_id=user_session_id
         )
         
-        # Process and rank results
-        all_results = []
-        seen_jobs = set()
-        
-        def normalize_text(text: str) -> str:
-            return ' '.join(text.lower().split())
-
-        def contains_phrase(text: str, phrase: str) -> bool:
-            text = normalize_text(text)
-            phrase = normalize_text(phrase)
-            
-            if phrase in text:
-                return True
-            
-            words = phrase.split()
-            if len(words) > 1:
-                main_words = [w for w in words if len(w) > 3]
-                for word in main_words:
-                    if word not in text:
-                        return False
-                return True
-            
-            return False
-
-        for job in results.get("jobs", []):
-            if job["job_id"] not in seen_jobs:
-                seen_jobs.add(job["job_id"])
-                description = job.get("description", "").lower()
-                
-                matching_skills = [
-                    skill for skill in user_profile.skills 
-                    if contains_phrase(description, skill)
-                ]
-                
-                matching_culture = [
-                    culture for culture in user_profile.work_culture 
-                    if contains_phrase(description, culture)
-                ]
-                
-                skills_score = len(matching_skills) / len(user_profile.skills) if user_profile.skills else 0
-                culture_score = len(matching_culture) / len(user_profile.work_culture) if user_profile.work_culture else 0
-                
-                match_score = (
-                    skills_score * 0.6 +
-                    culture_score * 0.4
-                )
-
-                if match_score > 0:
-                    all_results.append(JobRecommendation(
-                        job_id=job["job_id"],
-                        title=job["title"],
-                        company_name=job["company_name"],
-                        description=job["description"],
-                        salary_range=f"${job.get('min_salary', 0):,.0f} - ${job.get('max_salary', 0):,.0f}",
-                        match_score=match_score,
-                        matching_skills=matching_skills,
-                        matching_culture=matching_culture,
-                        location=job.get("location")
-                    ))
-        
-        all_results.sort(key=lambda x: x.match_score, reverse=True)
-        top_recommendations = all_results[:10]
+        # Process and store new recommendations
+        top_recommendations = results['jobs'][:5]
+        search_service.store_recommendations(
+            recommendations=top_recommendations,
+            chat_session_id=user_session_id,
+            user_id=user_profile.id,
+            recommendation_type='initial'
+        )
         
         return RecommendationResponse(
             recommendations=top_recommendations,
-            session_id=session_id
+            user_session_id=user_session_id
         )
         
     except Exception as e:
+        print(f"Error in get_recommendations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{session_id}")
-def read_user(session_id: str, db: Session = Depends(get_db)):
-    return get_user_profile(db=db, session_id=session_id)
+@router.get("/recommendations/all/{user_session_id}", response_model=List[JobRecommendationResponse])
+async def get_all_user_recommendations(
+    user_session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get all recommendations across chat sessions for a user"""
+    user_profile = get_user_profile(db=db, user_session_id=user_session_id)
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+        
+    # Get all recommendations for this user, grouped by chat session
+    recommendations = db.query(DBJobRecommendation)\
+        .filter(DBJobRecommendation.user_id == user_profile.id)\
+        .order_by(
+            DBJobRecommendation.chat_session_id,
+            DBJobRecommendation.match_score.desc()
+        )\
+        .all()
+    
+    return recommendations
+
+@router.get("/{user_session_id}")
+def read_user(user_session_id: str, db: Session = Depends(get_db)):
+    return get_user_profile(db=db, user_session_id=user_session_id)

@@ -34,7 +34,7 @@ def generate_job_recommendations(session_id: str) -> List[Dict]:
     try:
         search_service = get_search_service(db)
         user_profile = db.query(UserProfile).filter(
-            UserProfile.session_id == session_id
+            UserProfile.user_session_id == session_id
         ).first()
         
         if not user_profile:
