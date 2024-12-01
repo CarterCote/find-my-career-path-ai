@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 
 class UserProfileBase(BaseModel):
@@ -63,6 +63,11 @@ class JobRecommendationBase(BaseModel):
     company_name: Optional[str] = None
     match_score: Optional[float] = None
     recommendation_type: Optional[str] = None
+    matching_skills: Optional[List[str]] = []
+    matching_culture: Optional[List[str]] = []
+    evaluation_data: Optional[Dict] = None
+    preference_version: Optional[int] = 1
+    location: Optional[str] = None
 
 class JobRecommendationCreate(JobRecommendationBase):
     user_id: int

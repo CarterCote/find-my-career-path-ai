@@ -11,7 +11,7 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, SystemMessage
-from ..crud import create_chat_message
+from ..crud import create_chat_message, create_job_recommendation
 from ..models import UserProfile, JobRecommendation, ChatHistory, CareerRecommendation
 from .job_retriever import JobSearchRetriever, SearchStrategy
 from sklearn.metrics.pairwise import cosine_similarity
@@ -852,8 +852,15 @@ class JobSearchService:
                 enhanced_profile
             )
             
+            # Format recommendations with evaluation insights
+            formatted_recommendations = [
+                self.format_job_recommendation(rec) 
+                for rec in top_5_results
+            ]
+            
             return {
-                'recommendations': top_5_results,  # Only return top 5
+                'recommendations': top_5_results,
+                'formatted_recommendations': formatted_recommendations,
                 'evaluation': evaluation_results
             }
                 
@@ -867,7 +874,7 @@ class JobSearchService:
     def store_recommendations(self, recommendations: List[Dict], chat_session_id: str, user_id: int, recommendation_type: str = 'refined'):
         """Store job recommendations for a user session"""
         try:
-            # First verify the user exists
+            # First verify the user exists (KEEP THIS GUARDRAIL)
             user_profile = self.db.query(UserProfile).filter(UserProfile.id == user_id).first()
             if not user_profile:
                 print(f"Error: No user profile found for user_id {user_id}")
@@ -875,46 +882,64 @@ class JobSearchService:
 
             stored_recs = []
             for rec in recommendations:
-                # Get match score from profile match data first
-                match_score = (
-                    rec.get('profile_match', {}).get('overall_score', 0.0)
-                    or rec.get('match_data', {}).get('skill_match', 0.0)
-                    or rec.get('relevance_score', 0.0)
-                    or rec.get('match_score', 0.0)
-                )
-                
-                # Get matching skills and culture from profile match
-                matching_skills = rec.get('profile_match', {}).get('matching_skills', [])
-                matching_culture = rec.get('profile_match', {}).get('matching_culture', [])
-                
-                job_rec = JobRecommendation(
-                    user_id=user_id,
-                    chat_session_id=chat_session_id,
-                    preference_version=1,  # Add this line
-                    job_id=rec.get('job_id'),
-                    title=rec.get('title'),
-                    company_name=rec.get('company_name'),
-                    match_score=float(match_score),
-                    matching_skills=matching_skills,
-                    matching_culture=matching_culture,
-                    location=rec.get('location'),
-                    recommendation_type=recommendation_type
-                )
-                self.db.add(job_rec)
-                stored_recs.append(job_rec)
-            
-            try:
-                self.db.commit()
+                try:
+                    # KEEP THE SOPHISTICATED MATCH SCORE LOGIC
+                    match_score = (
+                        rec.get('profile_match', {}).get('overall_score', 0.0)
+                        or rec.get('match_data', {}).get('skill_match', 0.0)
+                        or rec.get('relevance_score', 0.0)
+                        or rec.get('match_score', 0.0)
+                    )
+                    
+                    # KEEP THE EVALUATION DATA PROCESSING
+                    profile_match = rec.get('profile_match', {})
+                    evaluation_data = {
+                        'skills_alignment': profile_match.get('skill_match', 0.0) * 10,
+                        'values_compatibility': profile_match.get('culture_match', 0.0) * 10,
+                        'culture_fit': profile_match.get('culture_match', 0.0) * 10,
+                        'growth_potential': profile_match.get('growth_potential', 0.0) * 10,
+                        'skill_gaps': profile_match.get('evaluation_details', {}).get('skill_gaps', []),
+                        'culture_fit_details': profile_match.get('evaluation_details', {}).get('culture_fit_details', []),
+                        'reasoning': profile_match.get('evaluation_details', {}).get('reasoning', {})
+                    }
+
+                    try:
+                        # Use CRUD but within our error handling
+                        job_rec = create_job_recommendation(
+                            db=self.db,
+                            user_id=user_id,
+                            chat_session_id=chat_session_id,
+                            job_id=rec.get('job_id'),
+                            title=rec.get('title'),
+                            company_name=rec.get('company_name'),
+                            match_score=float(match_score),
+                            matching_skills=profile_match.get('evaluation_details', {}).get('skill_gaps', []),
+                            matching_culture=profile_match.get('evaluation_details', {}).get('culture_fit_details', []),
+                            location=rec.get('location'),
+                            recommendation_type=recommendation_type,
+                            evaluation_data=evaluation_data,
+                            preference_version=1
+                        )
+                        stored_recs.append(job_rec)
+                    except Exception as e:
+                        print(f"Error creating individual recommendation: {str(e)}")
+                        # Continue with next recommendation instead of failing entire batch
+                        continue
+
+                except Exception as e:
+                    print(f"Error processing recommendation data: {str(e)}")
+                    continue
+
+            if stored_recs:
                 print(f"Successfully stored {len(stored_recs)} recommendations for user {user_id}, chat_session {chat_session_id}")
-                return stored_recs
-            except Exception as e:
-                print(f"Error committing recommendations: {str(e)}")
-                self.db.rollback()
-                return []
+            else:
+                print("Warning: No recommendations were successfully stored")
                 
+            return stored_recs
+                    
         except Exception as e:
-            print(f"Error storing recommendations: {str(e)}")
-            self.db.rollback()
+            print(f"Error in store_recommendations: {str(e)}")
+            self.db.rollback()  # Rollback any partial changes
             return []
 
     def get_user_recommendations(self, user_id: int, limit: int = 10):
@@ -1037,6 +1062,33 @@ class JobSearchService:
                     extracted_skills.extend(skills)
         
         return list(set(extracted_skills))  # Remove duplicates
+
+    def format_job_recommendation(self, job: Dict) -> str:
+        """Format a single job recommendation with evaluation insights"""
+        match_data = job.get('profile_match', {})
+        eval_details = match_data.get('evaluation_details', {})
+        
+        return f"""
+Job: {job.get('title')}
+Company: {job.get('company_name')}
+Location: {job.get('location')}
+Match Score: {match_data.get('overall_score', 0):.2f}
+
+Fit Analysis:
+- Skills Match: {match_data.get('skill_match', 0):.2f}
+- Culture Match: {match_data.get('culture_match', 0):.2f}
+
+Key Insights:
+{eval_details.get('reasoning', {}).get('skills', '')}
+
+Growth Potential:
+{eval_details.get('reasoning', {}).get('growth', '')}
+
+Areas for Development:
+- {', '.join(eval_details.get('skill_gaps', ['None identified']))}
+
+------------------------------
+"""
 
 # @lru_cache()
 # def get_search_service(db: Session):

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from . import models
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 def create_user_profile(db: Session, user_session_id: str):
     """Create or get a user profile"""
@@ -53,7 +53,12 @@ def create_job_recommendation(
     title: Optional[str] = None,
     company_name: Optional[str] = None,
     match_score: Optional[float] = None,
-    recommendation_type: str = 'initial'
+    matching_skills: Optional[List[str]] = None,
+    matching_culture: Optional[List[str]] = None,
+    evaluation_data: Optional[Dict] = None,
+    recommendation_type: str = 'initial',
+    preference_version: int = 1,
+    location: Optional[str] = None
 ):
     """Create a job recommendation"""
     job_rec = models.JobRecommendation(
@@ -63,7 +68,12 @@ def create_job_recommendation(
         title=title,
         company_name=company_name,
         match_score=match_score,
-        recommendation_type=recommendation_type
+        matching_skills=matching_skills or [],
+        matching_culture=matching_culture or [],
+        evaluation_data=evaluation_data,
+        recommendation_type=recommendation_type,
+        preference_version=preference_version,
+        location=location
     )
     db.add(job_rec)
     db.commit()

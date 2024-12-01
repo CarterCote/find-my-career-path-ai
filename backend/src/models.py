@@ -64,6 +64,7 @@ class JobRecommendation(Base):
     matching_culture = Column(ARRAY(String))
     location = Column(String(255))
     recommendation_type = Column(String(50))
+    evaluation_data = Column(JSON, nullable=True)  # Add evaluation data field
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
