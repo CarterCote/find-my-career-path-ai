@@ -89,46 +89,96 @@ class ProfileQuestioner:
 
     def process_response(self, question: str, response: str) -> Dict:
         """Process user's natural language response into structured search parameters"""
+        print(f"\n=== Processing Response Start ===")
+        print(f"Input Question: {question}")
+        print(f"Input Response: {response}")
+        
         try:
+            # Prepare messages for LLM
             messages = [
                 {
                     "role": "system",
-                    "content": "You are a data structuring assistant. Always respond with a valid JSON object."
+                    "content": """You are a data structuring assistant. Analyze the question and response to extract relevant job search parameters.
+                    Focus on these key aspects:
+                    - Skills mentioned
+                    - Work environment preferences
+                    - Industry interests
+                    - Team size preferences
+                    - Experience level indicators
+                    
+                    Always return a valid JSON object with relevant fields."""
                 },
                 {
                     "role": "user",
-                    "content": f"""Convert this response into search parameters:
-                        Question: {question}
-                        Response: {response}
-                        
-                        Return EXACTLY like this example:
-                        {{
-                            "required_skills": ["python", "aws"],
-                            "work_environment": "startup",
-                            "experience_years": 3,
-                            "team_size": "small",
-                            "industry": "technology"
-                        }}"""
+                    "content": f"""Question: {question}
+                    Response: {response}
+                    
+                    Structure the response into these categories (include only relevant fields):
+                    {{
+                        "required_skills": ["skill1", "skill2"],
+                        "work_environment": "environment type",
+                        "team_size": "size preference",
+                        "industry": "industry preference",
+                        "experience_level": "level",
+                        "preferences": ["other relevant preferences"]
+                    }}"""
                 }
             ]
             
-            # Use invoke instead of chat
+            print("\nInvoking LLM...")
             result = self.llm.invoke(messages)
-            
-            # Clean and parse response
             content = result.content.strip()
-            if not content.startswith('{'):
-                content = content.split('{', 1)[-1]
-            if not content.endswith('}'):
-                content = content.split('}')[0] + '}'
+            print(f"Raw LLM Response: {content}")
             
             try:
-                return json.loads(content)
+                # Find the JSON object in the content
+                start_idx = content.find('{')
+                end_idx = content.rfind('}') + 1
+                
+                print(f"JSON Extraction - Start Index: {start_idx}, End Index: {end_idx}")
+                
+                if start_idx != -1 and end_idx != 0:
+                    json_str = content[start_idx:end_idx]
+                    print(f"Extracted JSON string: {json_str}")
+                    
+                    parsed_data = json.loads(json_str)
+                    print(f"Successfully parsed JSON: {json.dumps(parsed_data, indent=2)}")
+                    
+                    # Validate and clean the response
+                    cleaned_data = {}
+                    if parsed_data.get('required_skills'):
+                        cleaned_data['required_skills'] = [
+                            skill.lower().strip() 
+                            for skill in parsed_data['required_skills']
+                        ]
+                    if parsed_data.get('work_environment'):
+                        cleaned_data['work_environment'] = parsed_data['work_environment'].lower().strip()
+                    if parsed_data.get('team_size'):
+                        cleaned_data['team_size'] = parsed_data['team_size'].lower().strip()
+                    if parsed_data.get('industry'):
+                        cleaned_data['industry'] = parsed_data['industry'].lower().strip()
+                    if parsed_data.get('experience_level'):
+                        cleaned_data['experience_level'] = parsed_data['experience_level'].lower().strip()
+                    if parsed_data.get('preferences'):
+                        cleaned_data['preferences'] = [
+                            pref.lower().strip() 
+                            for pref in parsed_data['preferences']
+                        ]
+                    
+                    print(f"Final cleaned data: {json.dumps(cleaned_data, indent=2)}")
+                    print("=== Processing Response End ===\n")
+                    return cleaned_data
+                    
             except json.JSONDecodeError as e:
                 print(f"JSON parsing error: {str(e)}")
-                print(f"Raw content: {content}")
+                print(f"Raw content causing error: {content}")
+                print("=== Processing Response End (with JSON error) ===\n")
                 return {}
-            
+                
         except Exception as e:
-            print(f"Error processing response: {str(e)}")
+            print(f"Unexpected error: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            print("=== Processing Response End (with error) ===\n")
             return {}

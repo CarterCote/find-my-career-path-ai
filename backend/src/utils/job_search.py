@@ -173,7 +173,11 @@ class JobSearchService:
                     
                     # Process all Q&A responses
                     processed_responses = []
+                    print("\nStarting Q&A Processing...")
                     for qa in state["answers"]:
+                        print(f"\nProcessing Q&A pair:")
+                        print(f"Question: {qa['question']}")
+                        print(f"Answer: {qa['answer']}")
                         try:
                             processed = self.profile_questioner.process_response(
                                 qa["question"], 
@@ -181,8 +185,16 @@ class JobSearchService:
                             )
                             if processed:
                                 processed_responses.append(processed)
+                                print(f"Successfully added processed response: {json.dumps(processed, indent=2)}")
+                            else:
+                                print("Warning: Received empty processed response")
                         except Exception as e:
                             print(f"Error processing response: {str(e)}")
+                            print(f"Error type: {type(e)}")
+                            import traceback
+                            print(f"Traceback: {traceback.format_exc()}")
+
+                    print(f"\nFinal processed responses: {json.dumps(processed_responses, indent=2)}")
                     
                     # Get refined recommendations
                     refined_results = self.refine_recommendations(
