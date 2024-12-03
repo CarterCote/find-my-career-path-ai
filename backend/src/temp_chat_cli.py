@@ -105,6 +105,10 @@ def chat():
             print("\nExisting Profiles:")
             for profile in profiles:
                 print(f"ID: {profile['id']} - Session: {profile['user_session_id']}")
+                if 'core_values' in profile:
+                    print(f"    Values: {profile['core_values']}")
+                    print(f"    Culture: {profile['work_culture']}")
+                    print(f"    Skills: {profile['skills']}")
             
             profile_id = input("\nEnter profile ID to access: ")
             
@@ -151,22 +155,26 @@ def chat():
             print("\nExisting Profiles:")
             for profile in profiles:
                 print(f"ID: {profile['id']} - Session: {profile['user_session_id']}")
+                if 'core_values' in profile:
+                    print(f"    Values: {profile['core_values']}")
+                    print(f"    Culture: {profile['work_culture']}")
+                    print(f"    Skills: {profile['skills']}")
             
             user_id = input("\nEnter user ID to use their preferences: ")
             
-            # Fetch user's preferences
-            user_response = requests.get(f'http://127.0.0.1:8000/users/{user_id}')
-            if user_response.status_code != 200:
-                print(f"\nError fetching user data: {user_response.status_code}")
+            # Find the selected profile in our existing data
+            selected_profile = next((p for p in profiles if str(p['id']) == user_id), None)
+            if not selected_profile:
+                print("\nError: Profile not found")
                 return
-                
-            user_data = user_response.json()
-            chat_session_id = f"session-{random.randint(1000, 9999999)}"
+            
+            # Use the existing session ID from the profile
+            chat_session_id = selected_profile['user_session_id']
             
             print("\nUsing the following preferences:")
-            print(f"Core Values: {', '.join(user_data['core_values'])}")
-            print(f"Work Culture: {', '.join(user_data['work_culture'])}")
-            print(f"Skills: {', '.join(user_data['skills'])}")
+            print(f"Core Values: {', '.join(selected_profile['core_values'])}")
+            print(f"Work Culture: {', '.join(selected_profile['work_culture'])}")
+            print(f"Skills: {', '.join(selected_profile['skills'])}")
             
             # Start Q&A process
             print("\nGenerating questions based on your profile...")
@@ -222,7 +230,7 @@ def chat():
             if qa_complete:
                 print("\nFetching job recommendations...")
                 recommendations_response = requests.get(
-                    f'http://127.0.0.1:8000/users/recommendations/{chat_session_id}'
+                    f"http://127.0.0.1:8000/users/recommendations/{chat_session_id}"
                 )
                 
                 if recommendations_response.status_code == 200:

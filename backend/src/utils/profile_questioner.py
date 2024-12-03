@@ -22,17 +22,57 @@ class ProfileQuestioner:
         """Optimize the question generation prompt based on conversation history"""
         try:
             print("\n========== OPTIMIZER DEBUG ==========")
+            print(f"Input Profile Data:")
+            print(f"Core Values: {formatted_profile['core_values']}")
+            print(f"Work Culture: {formatted_profile['work_culture']}")
+            print(f"Skills: {formatted_profile['skills']}")
             
             # Analyze response quality
             positive_responses = []
             improvement_areas = []
             
             for qa in previous_qa:
-                quality_score = self._analyze_response_quality(qa['question'], qa['response'])
-                if quality_score.get('detailed_response', False):
-                    positive_responses.append(f"Question '{qa['question']}' elicited specific details")
-                if quality_score.get('needs_improvement', False):
-                    improvement_areas.append(f"Question '{qa['question']}' could be more specific")
+                try:
+                    analysis_prompt = f"""Analyze this question-answer pair for response quality:
+                    Question: {qa['question']}
+                    Response: {qa['response']}
+                    
+                    Return a JSON object with these fields:
+                    {{
+                        "detailed_response": boolean,  // Did the response provide specific details?
+                        "needs_improvement": boolean,  // Could the question have been more specific?
+                        "relevant_details": [string],  // List of relevant details provided
+                        "missing_aspects": [string]    // Aspects that could have been explored
+                    }}
+                    
+                    IMPORTANT: Respond ONLY with the JSON object, no additional text.
+                    """
+                    
+                    messages = [{"role": "system", "content": analysis_prompt}]
+                    response = self.llm.invoke(messages)
+                    
+                    # Clean the response content
+                    content = response.content.strip()
+                    # Remove any markdown formatting if present
+                    if content.startswith('```json'):
+                        content = content[7:-3] if content.endswith('```') else content[7:]
+                    elif content.startswith('```'):
+                        content = content[3:-3] if content.endswith('```') else content[3:]
+                        
+                    print(f"Debug - Raw analysis response: {content}")
+                    
+                    # Parse JSON response
+                    quality_score = json.loads(content)
+                    
+                    if quality_score.get('detailed_response', False):
+                        positive_responses.append(f"Question '{qa['question']}' elicited specific details")
+                    if quality_score.get('needs_improvement', False):
+                        improvement_areas.append(f"Question '{qa['question']}' could be more specific")
+                        
+                except Exception as e:
+                    print(f"Error analyzing response: {str(e)}")
+                    print(f"Raw response content: {response.content if hasattr(response, 'content') else 'No content'}")
+                    continue
 
             optimizer_context = OPTIMIZER_PROMPT.format(
                 core_values=', '.join(formatted_profile['core_values']),
@@ -44,7 +84,8 @@ class ProfileQuestioner:
                 improvement_areas="\n- ".join(improvement_areas) if improvement_areas else "None identified"
             )
 
-            print(f"\nOptimizer Input:\n{optimizer_context}")
+            print(f"\nFormatted Optimizer Context:")
+            print(optimizer_context)
             
             messages = [{"role": "system", "content": optimizer_context}]
             response = self.llm.invoke(messages)
@@ -52,6 +93,11 @@ class ProfileQuestioner:
             new_prompt = response.content.strip()
             print(f"\nOptimized Prompt:\n{new_prompt}")
             
+            # Verify the new prompt has the placeholders
+            if "{core_values}" not in new_prompt or "{work_culture}" not in new_prompt or "{skills}" not in new_prompt:
+                print("\nWarning: New prompt is missing required placeholders, falling back to current prompt")
+                return self.current_prompt
+                
             self.current_prompt = new_prompt
             return new_prompt
             
@@ -73,16 +119,29 @@ class ProfileQuestioner:
                 "relevant_details": [string],  // List of relevant details provided
                 "missing_aspects": [string]    // Aspects that could have been explored
             }}
+            
+            IMPORTANT: Respond ONLY with the JSON object, no additional text.
             """
             
             messages = [{"role": "system", "content": analysis_prompt}]
             response = self.llm.invoke(messages)
             
+            # Clean the response content
+            content = response.content.strip()
+            # Remove any markdown formatting if present
+            if content.startswith('```json'):
+                content = content[7:-3] if content.endswith('```') else content[7:]
+            elif content.startswith('```'):
+                content = content[3:-3] if content.endswith('```') else content[3:]
+                
+            print(f"Debug - Raw analysis response: {content}")
+            
             # Parse JSON response
-            return json.loads(response.content)
+            return json.loads(content)
             
         except Exception as e:
             print(f"Error analyzing response: {str(e)}")
+            print(f"Raw response content: {response.content if hasattr(response, 'content') else 'No content'}")
             return {
                 "detailed_response": False,
                 "needs_improvement": True,
@@ -158,7 +217,8 @@ class ProfileQuestioner:
             'core_values': profile_data.get('core_values', []),
             'work_culture': profile_data.get('work_culture', []),
             'skills': profile_data.get('skills', []),
-            'additional_interests': profile_data.get('additional_interests', '')
+            'additional_interests': profile_data.get('additional_interests', ''),
+            'job_patterns': profile_data.get('job_patterns', {})
         }
 
     def _build_context(self, formatted_profile: Dict, previous_qa: List[Dict] = None, is_core_question: bool = True) -> str:
@@ -172,21 +232,27 @@ class ProfileQuestioner:
         
         # Build comprehensive job market insights
         job_patterns = formatted_profile.get('job_patterns', {})
-        print("\nIncorporating Job Market Patterns:")
-        if job_patterns:
-            print(f"- Industries: {', '.join(job_patterns['top_industries'])}")
-            print(f"- Roles: {', '.join(job_patterns['top_roles'][:5])}")
-            print(f"- Skills: {', '.join(job_patterns['common_skills'][:5])}")
-            print(f"- Companies: {', '.join(job_patterns['top_companies'][:3])}")
-        else:
-            print("No job patterns available")
+        print("\nJob Patterns Debug:")
+        print(f"Raw job_patterns: {json.dumps(job_patterns, indent=2)}")
         
-        recommendations_context = "\nJob Market Insights:"
+        recommendations_context = ""
         if job_patterns:
+            print("\nBuilding recommendations context with patterns:")
             recommendations_context += f"\n\nTop Industries: {', '.join(job_patterns['top_industries'])}"
             recommendations_context += f"\nCommon Role Types: {', '.join(job_patterns['top_roles'][:5])}"
             recommendations_context += f"\nMost Required Skills: {', '.join(job_patterns['common_skills'][:5])}"
             recommendations_context += f"\nActive Hiring Companies: {', '.join(job_patterns['top_companies'][:3])}"
+            print(f"Final recommendations_context: {recommendations_context}")
+        else:
+            print("No job patterns available for recommendations context")
+        
+        final_context = (INITIAL_QUESTION_PROMPT if is_core_question else FOLLOW_UP_QUESTION_PROMPT).format(
+            core_values=', '.join(formatted_profile['core_values']),
+            work_culture=', '.join(formatted_profile['work_culture']),
+            skills=', '.join(formatted_profile['skills']),
+            qa_history=qa_history,
+            recommendations=recommendations_context
+        )
         
         print("\nFinal Context Structure:")
         print("1. Profile Data")
@@ -194,13 +260,7 @@ class ProfileQuestioner:
         print("3. Previous Q&A History")
         print("=== END CONTEXT BUILDING ===\n")
         
-        return (INITIAL_QUESTION_PROMPT if is_core_question else FOLLOW_UP_QUESTION_PROMPT).format(
-            core_values=', '.join(formatted_profile['core_values']),
-            work_culture=', '.join(formatted_profile['work_culture']),
-            skills=', '.join(formatted_profile['skills']),
-            qa_history=qa_history,
-            recommendations=recommendations_context
-        )
+        return final_context
 
     def _get_default_questions(self) -> List[str]:
         """Return default fallback questions"""

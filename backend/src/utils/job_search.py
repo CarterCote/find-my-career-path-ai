@@ -153,6 +153,7 @@ class JobSearchService:
                     'initial_jobs': initial_recommendations[:5],  # Top 5 job matches
                     'job_patterns': job_patterns
                 }
+                print(enhanced_profile['job_patterns']);
                 
                 initial_question = self.profile_questioner.generate_questions(enhanced_profile)[0]
                 print(f"9. Generated first question: {initial_question}")
@@ -205,9 +206,16 @@ class JobSearchService:
                 # Check if we have all required information
                 missing_fields = [
                     field for field, collected in state["required_fields"].items() 
-                    if not collected
+                    if not collected and field in ['required_skills', 'work_environment']  # Only check mandatory fields
                 ]
                 print(f"8. Missing fields: {missing_fields}")
+                
+                # If we have 3+ Q&A pairs and still missing optional fields, set defaults
+                if len(state["previous_qa"]) >= 3:
+                    for field in ['team_size', 'experience_level']:
+                        if not state["required_fields"].get(field):
+                            print(f"Setting default for optional field: {field}")
+                            state["required_fields"][field] = True
                 
                 if not missing_fields:
                     print("9. All required information collected, processing final recommendations...")
@@ -665,25 +673,55 @@ class JobSearchService:
         ranked_results = []
         
         for result in results:
-            # Calculate match scores
+            print(f"\nScoring job: {result.get('title')}")
+            
+            # Calculate match scores with semantic similarity
             skill_match = self._calculate_skill_match(
                 profile_data.get('skills', []),
                 result.get('required_skills', [])
             )
+            print(f"- Skill match: {skill_match:.2f}")
+            
+            # Extract culture from description if not explicitly provided
+            job_culture = result.get('company_culture', [])
+            if not job_culture:
+                description = result.get('description', '')
+                # Look for culture keywords in description
+                culture_keywords = ['culture', 'environment', 'workplace', 'team']
+                job_culture = [word for word in description.lower().split() 
+                              if any(keyword in word for keyword in culture_keywords)]
             
             culture_match = self._calculate_culture_match(
                 profile_data.get('work_culture', []),
-                result.get('company_culture', [])
+                job_culture
             )
+            print(f"- Culture match: {culture_match:.2f}")
             
-            # Combine scores
-            match_score = (skill_match * 0.6) + (culture_match * 0.4)
+            # Use skill similarity for core values (since we already have this method)
+            values_match = 0.0
+            description = result.get('description', '')
+            if description and profile_data.get('core_values'):
+                values_scores = [
+                    self._get_skill_similarity(value, description)
+                    for value in profile_data.get('core_values', [])
+                ]
+                values_match = sum(score for score in values_scores if score > 0.3) / len(values_scores) if values_scores else 0.0
+            print(f"- Values match: {values_match:.2f}")
+            
+            # Weighted scoring
+            match_score = (
+                skill_match * 0.5 +          # 50% weight on skills
+                culture_match * 0.3 +        # 30% weight on culture
+                values_match * 0.2           # 20% weight on values
+            )
+            print(f"- Overall score: {match_score:.2f}")
             
             # Add match data to result
             result['profile_match'] = {
                 'overall_score': match_score,
                 'skill_match': skill_match,
-                'culture_match': culture_match
+                'culture_match': culture_match,
+                'values_match': values_match
             }
             
             ranked_results.append(result)
@@ -841,7 +879,9 @@ class JobSearchService:
             print(f"8. Final recommendations count: {len(ranked_results)}")
             print("9. Top recommendations:")
             for i, job in enumerate(ranked_results[:5], 1):
-                print(f"   {i}. {job.get('title')} - Score: {job.get('match_score', 0):.2f}")
+                # Access the correct score path
+                score = job.get('profile_match', {}).get('overall_score', 0)
+                print(f"   {i}. {job.get('title')} - Score: {score:.2f}")
             print("=" * 50)
             
             return ranked_results

@@ -6,18 +6,22 @@ Consider their profile data:
 - Work Culture Preferences: {work_culture}
 - Skills: {skills}
 
-Job Market Analysis:
+Job Market Insights:
 {recommendations}
 
 Guidelines:
-1. Use the job market insights to ask about specific roles or industries that match their profile
-2. Explore how their skills align with the common requirements in these positions
-3. Ask about their interest in specific companies or locations where opportunities exist
-4. Probe their preferences regarding the types of roles that appear in their matches
+1. Focus first on required information: skills and work environment preferences
+2. Ask about specific roles or industries that match their profile
+3. Explore how their skills align with the common requirements in these positions
+4. If work environment preferences aren't clear, ask about that specifically
 
-DO NOT ask about basic preferences we already know.
-DO ask questions that help validate or refine the job matches.
+DO NOT:
+- Ask explicitly about team size or experience level
+- Ask about basic preferences we already know
+- Ask multiple questions at once
+
 FOCUS on understanding their fit with the identified opportunities.
+If they volunteer information about team size or experience level, great, but don't explicitly ask.
 
 Return ONE targeted question in plain text format.
 """
@@ -34,8 +38,13 @@ PROFILE:
 PREVIOUS QUESTIONS AND ANSWERS:
 {qa_history}
 
-Generate ONE specific follow-up question that builds on their previous responses to help
-refine their job search preferences. Focus on exploring new aspects not yet covered.
+Guidelines:
+1. Focus on required information not yet gathered: skills and work environment preferences
+2. If they mention team size or experience level preferences, incorporate that into recommendations
+3. Keep questions natural and conversational
+4. Avoid explicitly asking about team size or experience level
+
+Generate ONE specific follow-up question that builds on their previous responses.
 """
 
 RESPONSE_PROCESSING = """Process the user's response to extract key information for job matching.
