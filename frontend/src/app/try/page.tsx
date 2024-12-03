@@ -61,12 +61,27 @@ export default function Try() {
     };
 
     const handleNext = () => {
+        if (currentStep === 3) {
+            console.log('Skills after step 3:', JSON.stringify(topSkills, null, 2));
+        }
+        if (currentStep === 4) {
+            console.log('Work Culture after step 4:', JSON.stringify(topWorkCulture, null, 2));
+        }
+        if (currentStep === 5) {
+            console.log('Core Values after step 5:', JSON.stringify(topCoreValues, null, 2));
+            const sortedData = {
+                skills: topSkills,
+                work_culture: topWorkCulture,
+                core_values: topCoreValues
+            };
+            console.log('Complete Sorted Data:', JSON.stringify(sortedData, null, 2));
+        }
         if (currentStep === 2) {
-        setDialogOpen(true);
+            setDialogOpen(true);
         }
         if (currentStep === 3) {
-        const highPrioritySkills = getHighPrioritySkills();
-        setHighSkills(highPrioritySkills);
+            const highPrioritySkills = getHighPrioritySkills();
+            setHighSkills(highPrioritySkills);
         }
         setCurrentStep(prev => prev + 1);
     };
@@ -90,28 +105,35 @@ export default function Try() {
     // Add function to send data to backend
     const handleFinish = async () => {
         try {
+            const dataToSend = {
+                skills: topSkills,
+                work_culture: topWorkCulture,  // match Python backend naming
+                core_values: topCoreValues,    // match Python backend naming
+                additional_interests: additionalInterests
+            };
+
+            console.log('Sending data:', dataToSend);
+
             const response = await fetch('/api/profile', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    skills: topSkills,
-                    work_culture: topWorkCulture,
-                    core_values: topCoreValues,
-                    additional_interests: additionalInterests
-                })
+                body: JSON.stringify(dataToSend)
             });
 
+            const responseText = await response.text();
+            console.log('Raw response:', responseText);
+
             if (!response.ok) {
-                throw new Error('Failed to save profile');
+                throw new Error(`Failed to save profile: ${responseText}`);
             }
 
-            // Handle successful save (e.g., redirect to next page)
+            const result = responseText ? JSON.parse(responseText) : {};
+            console.log('Profile saved successfully:', result);
             
         } catch (error) {
             console.error('Error saving profile:', error);
-            // Handle error (show error message to user)
         }
     };
 
@@ -271,8 +293,6 @@ export default function Try() {
                     onHighPrioritySkillsChange={(skills) => setStep3HighSkills(skills)}
                     onTopTenChange={setTopSkills}
                 />
-
-
               </div>
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent>

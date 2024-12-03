@@ -244,7 +244,7 @@ export default function SkillsGrid({ skills, onHighPrioritySkillsChange, onTopTe
     const topRowItems = tileElements
       .filter((_, index) => Math.floor(index / itemsPerRow) === 0)
       .map(element => element.innerHTML)
-      .slice(0, 10);
+      .slice(0, 11);
 
     onTopTenChange?.(topRowItems);
     

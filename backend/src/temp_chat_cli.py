@@ -89,8 +89,8 @@ def plot_performance_data(performance_data: Dict):
 def chat():
     print("\nCareer Path AI Assistant")
     print("-" * 50)
-    print("1. Create new profile")
-    print("2. Access existing profile")
+    print("1. Create recommendations from a profile")
+    print("2. Update recommendations from a profile")
     choice = input("\nEnter your choice (1 or 2): ")
 
     if choice == "2":
@@ -138,147 +138,126 @@ def chat():
                 print("\nError retrieving recommendations:", rec_response.status_code)
             return
             
-    # Existing flow for new profile creation
-    chat_session_id = f"session-{random.randint(1000, 9999999)}"
-    
-    # Your profile JSON
-    profile_data = {
-        "user_session_id": chat_session_id,
-        "core_values": [
-            "integrity", "personal development", "impact", "creativity",
-            "excellence", "intellectual challenge", "learning", "autonomy",
-            "relationships", "trust"
-        ],
-        "work_culture": [
-            "inspiring", "growth potential", "innovation", "professional development",
-            "flexibility", "supportive environment", "mentoring", "inclusive workplace",
-            "life balance", "recognition"
-        ],
-        "skills": [
-            "programming", "solve complex problems", "think critically",
-            "technical expertise", "strategic planning", "project management",
-            "analyze", "research", "build relationships", "communicate verbally"
-        ],
-        "additional_interests": ""
-    }
-    
-    # First, create a user profile with preferences
-    print("Creating user profile with preferences...")
-    profile_response = requests.post(
-        'http://127.0.0.1:8000/users/preferences',
-        json=profile_data
-    )
-    
-    print(f"\nProfile creation status code: {profile_response.status_code}")
-    print(f"Profile creation response: {profile_response.text}")
-    
-    if profile_response.status_code != 200:
-        print(f"Error creating profile: {profile_response.text}")
-        return
-    
-    print("\nProfile created successfully!")
-    
-    # Start Q&A process
-    print("\nGenerating questions based on your profile...")
-    initial_message = "Based on my profile, what specific questions should I answer to help refine my job search?"
-    
-    print(f"\nDebug - About to make POST request to /chat with:")
-    print(f"message: {initial_message}")
-    print(f"chat_session_id: {chat_session_id}")
-    
-    questions_response = requests.post(
-        'http://127.0.0.1:8000/chat',
-        params={
-            "message": initial_message,
-            "chat_session_id": chat_session_id
-        }
-    )
-    
-    print(f"\nDebug - Raw response from /chat:")
-    print(f"Status code: {questions_response.status_code}")
-    # print(f"Headers: {dict(questions_response.headers)}")
-    # print(f"Content: {questions_response.content}")
-    
-    if questions_response.status_code != 200:
-        print("\nError starting Q&A:", questions_response.status_code)
-        return
-    
-    # Handle Q&A session
-    qa_complete = False
-    while not qa_complete:
-        try:
-            result = questions_response.json()
-            print("\nAssistant:", result.get('response', 'No response found'))
+    else:  # Choice 1: Create recommendations from a profile
+        # Get existing profiles to let user select one
+        print("\nFetching existing user profiles...")
+        response = requests.get('http://127.0.0.1:8000/users/profiles')
+        if response.status_code == 200:
+            profiles = response.json()
+            if not profiles:
+                print("\nNo existing profiles found.")
+                return
+                
+            print("\nExisting Profiles:")
+            for profile in profiles:
+                print(f"ID: {profile['id']} - Session: {profile['user_session_id']}")
             
-            # Check if Q&A is complete
-            if result.get('qa_complete'):
-                print("\nQ&A session complete! Getting job recommendations...")
-                qa_complete = True
-                break
+            user_id = input("\nEnter user ID to use their preferences: ")
             
-            # Get user's answer
-            answer = input("\nYour answer: ")
+            # Fetch user's preferences
+            user_response = requests.get(f'http://127.0.0.1:8000/users/{user_id}')
+            if user_response.status_code != 200:
+                print(f"\nError fetching user data: {user_response.status_code}")
+                return
+                
+            user_data = user_response.json()
+            chat_session_id = f"session-{random.randint(1000, 9999999)}"
             
-            # Send answer
+            print("\nUsing the following preferences:")
+            print(f"Core Values: {', '.join(user_data['core_values'])}")
+            print(f"Work Culture: {', '.join(user_data['work_culture'])}")
+            print(f"Skills: {', '.join(user_data['skills'])}")
+            
+            # Start Q&A process
+            print("\nGenerating questions based on your profile...")
+            initial_message = "Based on my profile, what specific questions should I answer to help refine my job search?"
+            
+            print(f"\nDebug - About to make POST request to /chat with:")
+            print(f"message: {initial_message}")
+            print(f"chat_session_id: {chat_session_id}")
+            
             questions_response = requests.post(
                 'http://127.0.0.1:8000/chat',
                 params={
-                    "message": answer,
+                    "message": initial_message,
                     "chat_session_id": chat_session_id
                 }
             )
             
             if questions_response.status_code != 200:
-                print("\nError:", questions_response.status_code)
-                break
-                
-        except Exception as e:
-            print(f"\nError in Q&A session: {str(e)}")
-            break
-    
-    # Get recommendations after Q&A complete
-    if qa_complete:
-        print("\nFetching job recommendations...")
-        recommendations_response = requests.get(
-            f'http://127.0.0.1:8000/users/recommendations/{chat_session_id}'
-        )
-        
-        if recommendations_response.status_code == 200:
-            recommendations = recommendations_response.json()
-            print("\nJob Recommendations:")
-            print("-" * 50)
+                print("\nError starting Q&A:", questions_response.status_code)
+                return
             
-            for job in recommendations.get('recommendations', []):
-                print(f"\nJob: {job['title']}")
-                print(f"Company: {job['company_name']}")
-                print(f"Match Score: {job['match_score']:.2f}")
-                print(f"Matching Skills: {', '.join(job['matching_skills'])}")
-                print(f"Matching Culture: {', '.join(job['matching_culture'])}")
-                if job.get('location'):
-                    print(f"Location: {job['location']}")
-                print("-" * 30)
-            
-            # Handle evaluations if present
-            if 'evaluation' in recommendations:
-                display_evaluations(recommendations['evaluation'])
-            
-            # Plot performance data if available
-            if 'performance_data' in recommendations:
-                plot_performance_data(recommendations['performance_data'])
-            
-            # Ask user what to do next
-            while True:
-                choice = input("\nWhat would you like to do?\n1. Start new profile\n2. Exit\nYour choice (1 or 2): ")
-                if choice == "1":
-                    chat()  # Recursively start a new session
+            # Handle Q&A session
+            qa_complete = False
+            while not qa_complete:
+                try:
+                    result = questions_response.json()
+                    print("\nAssistant:", result.get('response', 'No response found'))
+                    
+                    if result.get('qa_complete'):
+                        print("\nQ&A session complete! Getting job recommendations...")
+                        qa_complete = True
+                        break
+                    
+                    answer = input("\nYour answer: ")
+                    
+                    questions_response = requests.post(
+                        'http://127.0.0.1:8000/chat',
+                        params={
+                            "message": answer,
+                            "chat_session_id": chat_session_id
+                        }
+                    )
+                    
+                    if questions_response.status_code != 200:
+                        print("\nError:", questions_response.status_code)
+                        break
+                        
+                except Exception as e:
+                    print(f"\nError in Q&A session: {str(e)}")
                     break
-                elif choice == "2":
-                    print("\nThank you for using Career Path AI Assistant!")
-                    return
+            
+            # Get recommendations after Q&A complete
+            if qa_complete:
+                print("\nFetching job recommendations...")
+                recommendations_response = requests.get(
+                    f'http://127.0.0.1:8000/users/recommendations/{chat_session_id}'
+                )
+                
+                if recommendations_response.status_code == 200:
+                    recommendations = recommendations_response.json()
+                    print("\nJob Recommendations:")
+                    print("-" * 50)
+                    
+                    for job in recommendations.get('recommendations', []):
+                        print(f"\nJob: {job['title']}")
+                        print(f"Company: {job['company_name']}")
+                        print(f"Match Score: {job['match_score']:.2f}")
+                        print(f"Matching Skills: {', '.join(job['matching_skills'])}")
+                        print(f"Matching Culture: {', '.join(job['matching_culture'])}")
+                        if job.get('location'):
+                            print(f"Location: {job['location']}")
+                        print("-" * 30)
+                    
+                    if 'evaluation' in recommendations:
+                        display_evaluations(recommendations['evaluation'])
+                    
+                    if 'performance_data' in recommendations:
+                        plot_performance_data(recommendations['performance_data'])
+                    
+                    while True:
+                        choice = input("\nWhat would you like to do?\n1. Start new profile\n2. Exit\nYour choice (1 or 2): ")
+                        if choice == "1":
+                            chat()
+                            break
+                        elif choice == "2":
+                            print("\nThank you for using Career Path AI Assistant!")
+                            return
+                        else:
+                            print("\nInvalid choice. Please enter 1 or 2.")
                 else:
-                    print("\nInvalid choice. Please enter 1 or 2.")
-        else:
-            print("\nError getting recommendations:", recommendations_response.status_code)
+                    print("\nError getting recommendations:", recommendations_response.status_code)
 
 if __name__ == "__main__":
     chat()
