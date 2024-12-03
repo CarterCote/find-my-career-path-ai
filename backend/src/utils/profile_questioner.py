@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from ..models import UserProfile
 from sqlalchemy.orm import Session
 import json
-from ..prompts.profile_prompts import QUESTION_GENERATION, RESPONSE_PROCESSING
+from ..prompts.profile_prompts import INITIAL_QUESTION_PROMPT, FOLLOW_UP_QUESTION_PROMPT, OPTIMIZER_PROMPT
 
 class ProfileQuestioner:
     def __init__(self, settings):
@@ -14,21 +14,90 @@ class ProfileQuestioner:
             api_key=settings.openai_api_key
         )
         
-        self.question_prompt = QUESTION_GENERATION
-        self.processing_prompt = RESPONSE_PROCESSING
+        self.conversation_history = []
+        self.current_prompt = FOLLOW_UP_QUESTION_PROMPT
+        self.response_quality_history = []
 
-    def generate_questions(self, profile_data: Dict) -> List[str]:
-        """Generate targeted questions based on user profile"""
+    def optimize_prompt(self, formatted_profile: Dict, previous_qa: List[Dict]) -> str:
+        """Optimize the question generation prompt based on conversation history"""
+        try:
+            print("\n========== OPTIMIZER DEBUG ==========")
+            
+            # Analyze response quality
+            positive_responses = []
+            improvement_areas = []
+            
+            for qa in previous_qa:
+                quality_score = self._analyze_response_quality(qa['question'], qa['response'])
+                if quality_score.get('detailed_response', False):
+                    positive_responses.append(f"Question '{qa['question']}' elicited specific details")
+                if quality_score.get('needs_improvement', False):
+                    improvement_areas.append(f"Question '{qa['question']}' could be more specific")
+
+            optimizer_context = OPTIMIZER_PROMPT.format(
+                core_values=', '.join(formatted_profile['core_values']),
+                work_culture=', '.join(formatted_profile['work_culture']),
+                skills=', '.join(formatted_profile['skills']),
+                qa_history="\n".join([f"Q: {qa['question']}\nA: {qa['response']}" for qa in previous_qa]),
+                current_prompt=self.current_prompt,
+                positive_responses="\n- ".join(positive_responses) if positive_responses else "None identified",
+                improvement_areas="\n- ".join(improvement_areas) if improvement_areas else "None identified"
+            )
+
+            print(f"\nOptimizer Input:\n{optimizer_context}")
+            
+            messages = [{"role": "system", "content": optimizer_context}]
+            response = self.llm.invoke(messages)
+            
+            new_prompt = response.content.strip()
+            print(f"\nOptimized Prompt:\n{new_prompt}")
+            
+            self.current_prompt = new_prompt
+            return new_prompt
+            
+        except Exception as e:
+            print(f"Error in optimizer: {str(e)}")
+            return self.current_prompt
+
+    def _analyze_response_quality(self, question: str, response: str) -> Dict:
+        """Analyze the quality of a response"""
+        try:
+            analysis_prompt = f"""Analyze this question-answer pair for response quality:
+            Question: {question}
+            Response: {response}
+            
+            Return a JSON object with these fields:
+            {{
+                "detailed_response": boolean,  // Did the response provide specific details?
+                "needs_improvement": boolean,  // Could the question have been more specific?
+                "relevant_details": [string],  // List of relevant details provided
+                "missing_aspects": [string]    // Aspects that could have been explored
+            }}
+            """
+            
+            messages = [{"role": "system", "content": analysis_prompt}]
+            response = self.llm.invoke(messages)
+            
+            # Parse JSON response
+            return json.loads(response.content)
+            
+        except Exception as e:
+            print(f"Error analyzing response: {str(e)}")
+            return {
+                "detailed_response": False,
+                "needs_improvement": True,
+                "relevant_details": [],
+                "missing_aspects": []
+            }
+
+    def generate_questions(self, profile_data: Dict, previous_qa: List[Dict] = None) -> List[str]:
+        """Generate targeted questions based on user profile and previous Q&A"""
         try:
             print("\n========== PROFILE QUESTIONER DEBUG ==========")
-            print(f"Function called with profile data: {profile_data}")
+            # print(f"Function called with profile data: {profile_data}")
             
-            formatted_profile = {
-                'core_values': profile_data.get('core_values', []),
-                'work_culture': profile_data.get('work_culture', []),
-                'skills': profile_data.get('skills', []),
-                'additional_interests': profile_data.get('additional_interests', '')
-            }
+            formatted_profile = self._format_profile(profile_data)
+            qa_count = len(previous_qa) if previous_qa else 0
             
             print("\nFormatted profile:")
             print("================")
@@ -38,54 +107,109 @@ class ProfileQuestioner:
             print(f"Additional Interests: {formatted_profile['additional_interests']}")
             print("================")
             
+            # First 4 questions use INITIAL_QUESTION_PROMPT but consider previous responses
+            if qa_count < 4:
+                print(f"\nGenerating core question {qa_count + 1}/4...")
+                context = self._build_context(formatted_profile, previous_qa, is_core_question=True)
+            else:
+                # After 4 questions, use optimizer and FOLLOW_UP_QUESTION_PROMPT
+                print("\nGenerating follow-up question...")
+                print("\nOptimizing prompt based on previous responses...")
+                self.optimize_prompt(formatted_profile, previous_qa)
+                context = self._build_context(formatted_profile, previous_qa, is_core_question=False)
+
             messages = [{
-                "role": "system", 
-                "content": QUESTION_GENERATION.format(
-                    core_values=', '.join(formatted_profile['core_values']),
-                    work_culture=', '.join(formatted_profile['work_culture']),
-                    skills=', '.join(formatted_profile['skills']),
-                    additional_interests=formatted_profile['additional_interests']
-                )
+                "role": "system",
+                "content": context
             }]
 
             print(f"\nDebug - Final prompt being sent to LLM:\n{messages[0]['content']}")
             
-            # Use invoke instead of chat
             response = self.llm.invoke(messages)
             print(f"\nDebug - Raw LLM response: {response}")
             
-            # Extract content from the response
+            # Extract and return single question
             content = response.content if hasattr(response, 'content') else str(response)
             content = content.strip()
+            print(f"\nDebug - Stripped content: {content}")
             
-            # Parse the numbered list into questions
             questions = [q.strip() for q in content.split('\n') if '?' in q]
+            print(f"\nDebug - Extracted questions: {questions}")
             
-            if len(questions) == 4:
-                return questions
-            
-            # If we get here, fall back to text parsing
-            default_questions = [
-                "What specific technical skills are most important for your ideal role?",
-                "What type of work environment do you thrive in?",
-                "What industry sectors interest you most?"
-            ]
-            
-            # Try to extract questions from text if present
-            if '?' in content:
-                questions = [q.strip() for q in content.split('\n') 
-                            if '?' in q and len(q.strip()) > 10]
-                return questions if questions else default_questions
-            
-            return default_questions
-            
+            if questions:
+                selected_question = questions[0]
+                print(f"\nDebug - Selected question: {selected_question}")
+                return [selected_question]
+            else:
+                default_question = self._get_default_questions()[qa_count]
+                print(f"\nDebug - Using default question: {default_question}")
+                return [default_question]
+
         except Exception as e:
             print(f"Error generating questions: {str(e)}")
-            return [
-                "What specific technical skills are most important for your ideal role?",
-                "What type of work environment do you thrive in?",
-                "What industry sectors interest you most?"
-            ]
+            print(f"Error type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return [self._get_default_questions()[0]]
+
+    def _format_profile(self, profile_data: Dict) -> Dict:
+        """Helper to format profile data"""
+        return {
+            'core_values': profile_data.get('core_values', []),
+            'work_culture': profile_data.get('work_culture', []),
+            'skills': profile_data.get('skills', []),
+            'additional_interests': profile_data.get('additional_interests', '')
+        }
+
+    def _build_context(self, formatted_profile: Dict, previous_qa: List[Dict] = None, is_core_question: bool = True) -> str:
+        print("\n=== BUILDING QUESTION CONTEXT ===")
+        print(f"Question Type: {'Core' if is_core_question else 'Follow-up'}")
+        
+        qa_history = "\n".join([
+            f"Q: {qa['question']}\nA: {qa['response']}"
+            for qa in (previous_qa or [])
+        ])
+        
+        # Build comprehensive job market insights
+        job_patterns = formatted_profile.get('job_patterns', {})
+        print("\nIncorporating Job Market Patterns:")
+        if job_patterns:
+            print(f"- Industries: {', '.join(job_patterns['top_industries'])}")
+            print(f"- Roles: {', '.join(job_patterns['top_roles'][:5])}")
+            print(f"- Skills: {', '.join(job_patterns['common_skills'][:5])}")
+            print(f"- Companies: {', '.join(job_patterns['top_companies'][:3])}")
+        else:
+            print("No job patterns available")
+        
+        recommendations_context = "\nJob Market Insights:"
+        if job_patterns:
+            recommendations_context += f"\n\nTop Industries: {', '.join(job_patterns['top_industries'])}"
+            recommendations_context += f"\nCommon Role Types: {', '.join(job_patterns['top_roles'][:5])}"
+            recommendations_context += f"\nMost Required Skills: {', '.join(job_patterns['common_skills'][:5])}"
+            recommendations_context += f"\nActive Hiring Companies: {', '.join(job_patterns['top_companies'][:3])}"
+        
+        print("\nFinal Context Structure:")
+        print("1. Profile Data")
+        print("2. Job Market Insights")
+        print("3. Previous Q&A History")
+        print("=== END CONTEXT BUILDING ===\n")
+        
+        return (INITIAL_QUESTION_PROMPT if is_core_question else FOLLOW_UP_QUESTION_PROMPT).format(
+            core_values=', '.join(formatted_profile['core_values']),
+            work_culture=', '.join(formatted_profile['work_culture']),
+            skills=', '.join(formatted_profile['skills']),
+            qa_history=qa_history,
+            recommendations=recommendations_context
+        )
+
+    def _get_default_questions(self) -> List[str]:
+        """Return default fallback questions"""
+        return [
+            "What specific technical skills are most important for your ideal role?",
+            "What type of work environment do you thrive in?",
+            "What industry sectors interest you most?",
+            "What role would you like to have in 5 years?"
+        ]
 
     def process_response(self, question: str, response: str) -> Dict:
         """Process user's natural language response into structured search parameters"""

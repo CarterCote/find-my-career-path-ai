@@ -1,3 +1,12 @@
+import json
+import torch
+import sys
+import os
+import re
+
+backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(backend_dir)
+
 from logging import Logger
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -11,21 +20,21 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, SystemMessage
-from ..crud import create_chat_message, create_job_recommendation
-from ..models import UserProfile, JobRecommendation, ChatHistory, CareerRecommendation
-from .job_retriever import JobSearchRetriever, SearchStrategy
 from sklearn.metrics.pairwise import cosine_similarity
 from functools import lru_cache
-from ..config import get_settings
 from sentence_transformers import SentenceTransformer
-from .profile_questioner import ProfileQuestioner
-from ..prompts.job_search_prompts import SYSTEM_PROMPT, FOLLOWUP_PROMPT
-from ..prompts.search_prompts import SEARCH_ENHANCEMENT
-from ..evaluation.persona_agent import CareerPersonaAgent
-from ..evaluation.metrics import RecommendationMetrics
 
-import json
-import torch
+# Local imports (change relative imports to absolute)
+from src.models import UserProfile, JobRecommendation, ChatHistory, CareerRecommendation
+from src.utils.job_retriever import JobSearchRetriever, SearchStrategy
+from src.utils.profile_questioner import ProfileQuestioner
+from src.prompts.job_search_prompts import SYSTEM_PROMPT, FOLLOWUP_PROMPT
+from src.prompts.search_prompts import SEARCH_ENHANCEMENT
+from src.evaluation.persona_agent import CareerPersonaAgent
+from src.evaluation.metrics import RecommendationMetrics
+from src.evaluation.performance_tracker import ModelPerformanceTracker
+from src.config import get_settings
+from src.crud import create_chat_message, create_job_recommendation
 
 class JobSearchService:
     def __init__(self, retriever, settings, db: Session):
@@ -47,9 +56,13 @@ class JobSearchService:
         self.profile_questioner = ProfileQuestioner(settings)
         print("3. ProfileQuestioner initialized")
         
+        # Initialize performance tracker
+        self.performance_tracker = ModelPerformanceTracker()
+        print("4. Performance tracker initialized")
+        
         # Add a state tracker for question-answer flow
         self.qa_state = {}
-        print("4. JobSearchService initialization complete")
+        print("5. JobSearchService initialization complete")
         
         # Your system prompt
         self.system_prompt = SYSTEM_PROMPT
@@ -87,7 +100,6 @@ class JobSearchService:
         return self.store[chat_session_id]
 
     def chat(self, message: str, chat_session_id: str = "default") -> Dict:
-        """Handle chat interactions including Q&A flow"""
         try:
             print("\n========== CHAT METHOD DEBUG ==========")
             print(f"1. Processing message for session: {chat_session_id}")
@@ -109,106 +121,104 @@ class JobSearchService:
             # Initialize state if first message
             if not state:
                 print("3. Initializing new state...")
-                print("4. Getting initial recommendations...")
-                initial_recommendations = self.get_initial_recommendations({
+                
+                profile_data = {
                     'core_values': user_profile.core_values or [],
                     'work_culture': user_profile.work_culture or [],
-                    'skills': user_profile.skills or []
-                })
+                    'skills': user_profile.skills or [],
+                    'additional_interests': user_profile.additional_interests or '',
+                    'chat_session_id': chat_session_id  # Required for career recommendations
+                }
                 
+                # Get initial recommendations using sparse search
+                print("4. Getting initial job recommendations...")
+                initial_recommendations = self.get_initial_recommendations(profile_data)
                 if not initial_recommendations:
                     print("Error: No initial recommendations found")
                     return {
                         "response": "No matching jobs found. Please adjust your profile criteria.",
                         "chat_session_id": chat_session_id
                     }
-                
                 print(f"5. Found {len(initial_recommendations)} initial recommendations")
-                print("6. Generating questions...")
                 
-                # Generate questions based on profile and initial recommendations
-                try:
-                    questions = self.profile_questioner.generate_questions({
-                        'core_values': user_profile.core_values or [],
-                        'work_culture': user_profile.work_culture or [],
-                        'skills': user_profile.skills or [],
-                        'additional_interests': user_profile.additional_interests or '',
-                        'initial_recommendations': initial_recommendations[:5]  # Use top 5 for question generation
-                    })
-                    
-                    state = {
-                        "questions": questions,
-                        "answers": [],
-                        "current_index": 0,
-                        "complete": False,
-                        "initial_recommendations": initial_recommendations
+                # Analyze job patterns
+                print("6. Analyzing job patterns...")
+                job_patterns = self._analyze_job_patterns(initial_recommendations)
+                print(f"7. Pattern analysis complete")
+                
+                # Get first question using both job and career recommendations
+                print("8. Generating initial question...")
+                enhanced_profile = {
+                    **profile_data,
+                    'initial_jobs': initial_recommendations[:5],  # Top 5 job matches
+                    'job_patterns': job_patterns
+                }
+                
+                initial_question = self.profile_questioner.generate_questions(enhanced_profile)[0]
+                print(f"9. Generated first question: {initial_question}")
+                
+                state = {
+                    "current_question": initial_question,
+                    "previous_qa": [],
+                    "complete": False,
+                    "profile_data": enhanced_profile,
+                    "initial_recommendations": initial_recommendations,
+                    "job_patterns": job_patterns,
+                    "required_fields": {
+                        "required_skills": False,
+                        "work_environment": False,
+                        "team_size": False,
+                        "industry": False,
+                        "experience_level": False,
+                        "preferences": False
                     }
-                    self.qa_state[chat_session_id] = state
-                    
-                    print(f"7. Generated {len(questions)} questions")
-                    return {
-                        "response": questions[0],
-                        "chat_session_id": chat_session_id
-                    }
-                    
-                except Exception as e:
-                    print(f"Error generating questions: {str(e)}")
-                    return {
-                        "response": "I'm having trouble generating questions. Let's start with: What type of work environment do you prefer?",
-                        "chat_session_id": chat_session_id
-                    }
+                }
+                self.qa_state[chat_session_id] = state
+                
+                return {
+                    "response": initial_question,
+                    "chat_session_id": chat_session_id
+                }
 
-            # Handle Q&A completion and responses
-            if state and not state.get("complete"):
-                # Store the current answer
-                if state.get("current_index") is not None:
-                    state["answers"].append({
-                        "question": state["questions"][state["current_index"]],
-                        "answer": message
-                    })
-                    
-                # Check if we've completed all questions
-                if len(state["answers"]) >= len(state["questions"]):
-                    print("8. Q&A complete, refining recommendations...")
-                    
-                    # Process all Q&A responses
-                    processed_responses = []
-                    print("\nStarting Q&A Processing...")
-                    for qa in state["answers"]:
-                        print(f"\nProcessing Q&A pair:")
-                        print(f"Question: {qa['question']}")
-                        print(f"Answer: {qa['answer']}")
-                        try:
-                            processed = self.profile_questioner.process_response(
-                                qa["question"], 
-                                qa["answer"]
-                            )
-                            if processed:
-                                processed_responses.append(processed)
-                                print(f"Successfully added processed response: {json.dumps(processed, indent=2)}")
-                            else:
-                                print("Warning: Received empty processed response")
-                        except Exception as e:
-                            print(f"Error processing response: {str(e)}")
-                            print(f"Error type: {type(e)}")
-                            import traceback
-                            print(f"Traceback: {traceback.format_exc()}")
-
-                    print(f"\nFinal processed responses: {json.dumps(processed_responses, indent=2)}")
-                    
-                    # Get refined recommendations
+            # Handle ongoing Q&A
+            if not state.get("complete"):
+                # Store the current Q&A pair
+                current_qa = {
+                    "question": state["current_question"],
+                    "response": message
+                }
+                state["previous_qa"].append(current_qa)
+                print(f"6. Stored Q&A pair: {json.dumps(current_qa, indent=2)}")
+                
+                # Process the response
+                processed_response = self.profile_questioner.process_response(
+                    current_qa["question"], 
+                    current_qa["response"]
+                )
+                print(f"7. Processed response: {json.dumps(processed_response, indent=2)}")
+                
+                # Update which fields we've collected
+                for field, value in processed_response.items():
+                    if value:  # If we got a non-empty value
+                        state["required_fields"][field] = True
+                
+                # Check if we have all required information
+                missing_fields = [
+                    field for field, collected in state["required_fields"].items() 
+                    if not collected
+                ]
+                print(f"8. Missing fields: {missing_fields}")
+                
+                if not missing_fields:
+                    print("9. All required information collected, processing final recommendations...")
+                    # Process all Q&A responses for final recommendations
                     refined_results = self.refine_recommendations(
-                        state["initial_recommendations"],
-                        processed_responses,
-                        {
-                            'core_values': user_profile.core_values or [],
-                            'work_culture': user_profile.work_culture or [],
-                            'skills': user_profile.skills or [],
-                            'additional_interests': user_profile.additional_interests or ''
-                        }
+                        state.get("initial_recommendations", []),
+                        [self.profile_questioner.process_response(qa["question"], qa["response"]) 
+                         for qa in state["previous_qa"]],
+                        state["profile_data"]
                     )
                     
-                    # Store recommendations and mark state as complete
                     if refined_results and refined_results.get('recommendations'):
                         top_jobs = refined_results['recommendations'][:5]
                         stored_recs = self.store_recommendations(
@@ -217,30 +227,38 @@ class JobSearchService:
                             user_profile.id,
                             'refined'
                         )
+                        
                         state["complete"] = True
                         self.qa_state[chat_session_id] = state
                         
                         return {
-                            "response": "Q&A session complete! I've analyzed your answers and found some great matches. Let me show you the recommendations.",
+                            "response": "Great! I've gathered all the information I need. Let me show you the recommendations that best match your preferences.",
                             "chat_session_id": chat_session_id,
                             "qa_complete": True,
-                            "recommendations": top_jobs,
+                            "recommendations": stored_recs,
                             "evaluation": refined_results.get('evaluation', {})
                         }
                 
-                # If not complete, move to next question
-                else:
-                    state["current_index"] += 1
-                    next_question = state["questions"][state["current_index"]]
-                    return {
-                        "response": next_question,
-                        "chat_session_id": chat_session_id
-                    }
+                # Generate next question
+                next_question = self.profile_questioner.generate_questions(
+                    state["profile_data"], 
+                    state["previous_qa"]
+                )[0]
+                print(f"10. Generated next question: {next_question}")
+                
+                state["current_question"] = next_question
+                return {
+                    "response": next_question,
+                    "chat_session_id": chat_session_id
+                }
 
             # Regular chat after Q&A
-            print("10. Regular chat mode")
-            return self._handle_regular_chat(message, chat_session_id)
-                
+            print("11. Chat session complete")
+            return {
+                "response": "Your job recommendations are ready! Let me know if you'd like to start a new search.",
+                "chat_session_id": chat_session_id
+            }
+                    
         except Exception as e:
             print(f"Error in chat method: {str(e)}")
             import traceback
@@ -744,7 +762,8 @@ class JobSearchService:
                     'system_score': system_score,
                     'persona_score': persona_score,
                     'detailed_evaluation': evaluation,
-                    'score_delta': persona_score - system_score
+                    'score_delta': persona_score - system_score,
+                'performance_metrics': self.performance_tracker.metrics_history
                 })
                 
             except Exception as e:
@@ -755,7 +774,8 @@ class JobSearchService:
             'evaluations': evaluation_results,
             'metrics': RecommendationMetrics.aggregate_scores(
                 [e['detailed_evaluation'] for e in evaluation_results]
-            ) if evaluation_results else {}
+            ) if evaluation_results else {},
+            'performance_trends': self.performance_tracker.metrics_history
         }
 
     def get_initial_recommendations(self, user_profile: Dict) -> List[Dict]:
@@ -840,120 +860,195 @@ class JobSearchService:
             # Update profile with soft constraints from Q&A
             enhanced_profile = user_profile.copy()
             for response in qa_responses:
-                for key, value in response.items():
-                    if key in enhanced_profile and isinstance(enhanced_profile[key], list):
-                        if isinstance(value, list):
-                            enhanced_profile[key].extend(value)
-                        else:
-                            enhanced_profile[key].append(value)
-                    else:
-                        enhanced_profile[key] = value
+                if response.get('required_skills'):
+                    enhanced_profile.setdefault('skills', []).extend(response['required_skills'])
+                if response.get('work_environment'):
+                    enhanced_profile.setdefault('work_culture', []).append(response['work_environment'])
+                if response.get('preferences'):
+                    enhanced_profile.setdefault('preferences', []).extend(response['preferences'])
+                if response.get('industry'):
+                    enhanced_profile.setdefault('industries', []).append(response['industry'])
 
-            # Re-rank initial results with enhanced profile
-            refined_results = self._rank_by_profile_match(
-                initial_results,
-                enhanced_profile
-            )
+            print(f"2. Enhanced profile: {json.dumps(enhanced_profile, indent=2)}")
             
-            # Select top 5 BEFORE evaluation
-            top_5_results = refined_results[:5]
+            # First use calculate_match_score for initial scoring
+            scored_results = []
+            for job in initial_results[:5]:  # Process top 5
+                try:
+                    match_score, matching_skills, matching_culture, matching_values = self.calculate_match_score(
+                        job, 
+                        enhanced_profile
+                    )
+                    
+                    # Structure the job with required fields
+                    scored_job = {
+                        'job_id': job.get('job_id'),
+                        'title': job.get('title'),
+                        'company_name': job.get('company_name'),
+                        'location': job.get('location', ''),
+                        'description': job.get('description', ''),
+                        'match_score': float(match_score),  # Ensure float type
+                        'matching_skills': matching_skills,
+                        'matching_culture': matching_culture,
+                        'matching_values': matching_values,
+                        'user_id': enhanced_profile.get('user_id'),  # Required field
+                        'recommendation_type': 'refined',
+                        'preference_version': 1
+                    }
+                    scored_results.append(scored_job)
+                    
+                except Exception as e:
+                    print(f"Error scoring job {job.get('title')}: {str(e)}")
+                    continue
             
-            # Only evaluate the top 5
-            evaluation_results = self.evaluate_recommendations(
-                top_5_results,  # Only evaluate top 5
-                enhanced_profile
-            )
+            # Use evaluate_recommendations for additional insights
+            evaluation_results = self.evaluate_recommendations(scored_results, enhanced_profile)
+            print(f"3. Evaluation complete: {len(evaluation_results.get('evaluations', []))} evaluations")
             
-            # Format recommendations with evaluation insights
-            formatted_recommendations = [
-                self.format_job_recommendation(rec) 
-                for rec in top_5_results
-            ]
+            # Combine scores and evaluation data
+            final_results = []
+            for job, evaluation in zip(scored_results, evaluation_results.get('evaluations', [])):
+                try:
+                    detailed_eval = evaluation['detailed_evaluation']
+                    
+                    # Update job with evaluation data while maintaining required fields
+                    recommendation = {
+                        'job_id': job['job_id'],
+                        'title': job['title'],
+                        'company_name': job['company_name'],
+                        'location': job['location'],
+                        'description': job['description'],
+                        'match_score': float((job['match_score'] + evaluation['persona_score']) / 2),  # Average both scores
+                        'matching_skills': job['matching_skills'],
+                        'matching_culture': job['matching_culture'],
+                        'user_id': job['user_id'],
+                        'recommendation_type': 'refined',
+                        'preference_version': 1,
+                        'evaluation_data': {
+                            'skills_alignment': detailed_eval.get('skills_alignment', 0),
+                            'values_compatibility': detailed_eval.get('values_compatibility', 0),
+                            'culture_fit': detailed_eval.get('culture_fit', 0),
+                            'growth_potential': detailed_eval.get('growth_potential', 0),
+                            'reasoning': detailed_eval.get('reasoning', {}),
+                            'skill_gaps': detailed_eval.get('skill_gaps', []),
+                            'culture_fit_details': detailed_eval.get('culture_fit_details', []),
+                            'system_score': job['match_score'],
+                            'persona_score': evaluation['persona_score'],
+                            'score_delta': evaluation['score_delta']
+                        }
+                    }
+                    final_results.append(recommendation)
+                    
+                except Exception as e:
+                    print(f"Error processing evaluation for {job['title']}: {str(e)}")
+                    continue
+            
+            print(f"\n4. Processed {len(final_results)} final recommendations")
+            
+            # Generate and save performance plots
+            performance_data = {
+                'metrics_history': self.performance_tracker.metrics_history,
+                'timestamp': self.performance_tracker.timestamp
+            }
             
             return {
-                'recommendations': top_5_results,
-                'formatted_recommendations': formatted_recommendations,
-                'evaluation': evaluation_results
+                'recommendations': final_results,
+                'evaluation': {
+                    'qa_responses': qa_responses,
+                    'enhanced_profile': enhanced_profile,
+                    'metrics': evaluation_results.get('metrics', {}),
+                    'performance_trends': evaluation_results.get('performance_trends', []),
+                    'performance_data': performance_data
+                }
             }
-                
+                    
         except Exception as e:
             print(f"Error in refining recommendations: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             return {
-                'recommendations': initial_results[:5],
+                'recommendations': [],
                 'evaluation': {}
             }
-
-    def store_recommendations(self, recommendations: List[Dict], chat_session_id: str, user_id: int, recommendation_type: str = 'refined'):
+    
+    def store_recommendations(self, recommendations: List[Dict], chat_session_id: str, user_id: int, recommendation_type: str = 'initial'):
         """Store job recommendations for a user session"""
         try:
-            # First verify the user exists (KEEP THIS GUARDRAIL)
+            print("\n=== STORE RECOMMENDATIONS DEBUG ===")
+            print(f"Processing {len(recommendations)} recommendations for session {chat_session_id}")
+            
+            # First verify the user exists
             user_profile = self.db.query(UserProfile).filter(UserProfile.id == user_id).first()
             if not user_profile:
                 print(f"Error: No user profile found for user_id {user_id}")
                 return []
-
+            
             stored_recs = []
             for rec in recommendations:
                 try:
-                    # KEEP THE SOPHISTICATED MATCH SCORE LOGIC
-                    match_score = (
-                        rec.get('profile_match', {}).get('overall_score', 0.0)
-                        or rec.get('match_data', {}).get('skill_match', 0.0)
-                        or rec.get('relevance_score', 0.0)
-                        or rec.get('match_score', 0.0)
-                    )
+                    print(f"\nProcessing recommendation for job: {rec.get('title', 'Unknown Title')}")
                     
-                    # KEEP THE EVALUATION DATA PROCESSING
-                    profile_match = rec.get('profile_match', {})
-                    evaluation_data = {
-                        'skills_alignment': profile_match.get('skill_match', 0.0) * 10,
-                        'values_compatibility': profile_match.get('culture_match', 0.0) * 10,
-                        'culture_fit': profile_match.get('culture_match', 0.0) * 10,
-                        'growth_potential': profile_match.get('growth_potential', 0.0) * 10,
-                        'skill_gaps': profile_match.get('evaluation_details', {}).get('skill_gaps', []),
-                        'culture_fit_details': profile_match.get('evaluation_details', {}).get('culture_fit_details', []),
-                        'reasoning': profile_match.get('evaluation_details', {}).get('reasoning', {})
+                    # Create a dictionary with only the fields needed by create_job_recommendation
+                    job_data = {
+                        # Remove db from job_data as it's a separate parameter
+                        'user_id': user_id,
+                        'chat_session_id': chat_session_id,
+                        'job_id': rec.get('job_id'),
+                        'title': rec.get('title'),
+                        'company_name': rec.get('company_name'),
+                        'location': rec.get('location'),
+                        'match_score': float(rec.get('match_score', 0.0)),
+                        'matching_skills': rec.get('matching_skills', []),
+                        'matching_culture': rec.get('matching_culture', []),
+                        'evaluation_data': rec.get('evaluation_data', {}),
+                        'recommendation_type': recommendation_type,
+                        'preference_version': 1
                     }
+                    
+                    print(f"Creating job recommendation with data: {json.dumps(job_data, indent=2)}")
+                    
+                    # Pass db separately from job_data
+                    job_rec = create_job_recommendation(
+                        db=self.db,  # Pass db separately
+                        **job_data   # Unpack the rest of the fields
+                    )
 
-                    try:
-                        # Use CRUD but within our error handling
-                        job_rec = create_job_recommendation(
-                            db=self.db,
-                            user_id=user_id,
-                            chat_session_id=chat_session_id,
-                            job_id=rec.get('job_id'),
-                            title=rec.get('title'),
-                            company_name=rec.get('company_name'),
-                            match_score=float(match_score),
-                            matching_skills=profile_match.get('evaluation_details', {}).get('skill_gaps', []),
-                            matching_culture=profile_match.get('evaluation_details', {}).get('culture_fit_details', []),
-                            location=rec.get('location'),
-                            recommendation_type=recommendation_type,
-                            evaluation_data=evaluation_data,
-                            preference_version=1
-                        )
-                        stored_recs.append(job_rec)
-                    except Exception as e:
-                        print(f"Error creating individual recommendation: {str(e)}")
-                        # Continue with next recommendation instead of failing entire batch
-                        continue
+                    stored_rec = {
+                        'id': job_rec.id,
+                        'job_id': job_rec.job_id,
+                        'title': job_rec.title,
+                        'company_name': job_rec.company_name,
+                        'location': job_rec.location,
+                        'match_score': float(job_rec.match_score) if job_rec.match_score else 0.0,
+                        'matching_skills': job_rec.matching_skills,
+                        'matching_culture': job_rec.matching_culture,
+                        'evaluation_data': job_rec.evaluation_data,
+                        'recommendation_type': job_rec.recommendation_type,
+                        'preference_version': job_rec.preference_version,
+                        'created_at': str(job_rec.created_at),
+                        'user_id': job_rec.user_id,
+                        'chat_session_id': job_rec.chat_session_id
+                    }
+                
+                    stored_recs.append(stored_rec)
+                    print(f"Successfully stored recommendation for job: {job_data['title']}")
 
                 except Exception as e:
-                    print(f"Error processing recommendation data: {str(e)}")
+                    print(f"Error processing recommendation: {str(e)}")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
                     continue
 
-            if stored_recs:
-                print(f"Successfully stored {len(stored_recs)} recommendations for user {user_id}, chat_session {chat_session_id}")
-            else:
-                print("Warning: No recommendations were successfully stored")
-                
+            print(f"\nFinished processing: Successfully stored {len(stored_recs)} of {len(recommendations)} recommendations")
             return stored_recs
-                    
+                        
         except Exception as e:
             print(f"Error in store_recommendations: {str(e)}")
-            self.db.rollback()  # Rollback any partial changes
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            self.db.rollback()
             return []
-
+        
     def get_user_recommendations(self, user_id: int, limit: int = 10):
         """Get a user's recommendations across all sessions"""
         return self.db.query(JobRecommendation)\
@@ -969,74 +1064,198 @@ class JobSearchService:
             .order_by(JobRecommendation.created_at.desc())\
             .all()
 
-    def generate_career_recommendations(self, user_profile: Dict) -> List[Dict]:
-        """Generate career path recommendations based on profile and job clusters"""
+    def _analyze_job_patterns(self, job_recommendations: List[Dict]) -> Dict:
+        """Analyze job recommendations to identify patterns and trends"""
         try:
-            # Get job recommendations first
-            job_recs = self.get_initial_recommendations(user_profile)
+            print("\n=== JOB PATTERN ANALYSIS DEBUG ===")
+            print(f"Analyzing {len(job_recommendations)} job recommendations...")
             
-            # Cluster similar jobs to identify career paths
-            career_clusters = self._cluster_jobs_into_careers(job_recs)
+            # Initialize pattern tracking
+            industries = {}
+            roles = {}
+            skill_counts = {}
+            companies = {}
+            locations = {}
             
-            # Generate career recommendations
-            career_recs = []
-            for cluster in career_clusters:
-                career_rec = CareerRecommendation(
-                    chat_session_id=user_profile['chat_session_id'],  # Changed from session_id
-                    career_title=cluster['career_title'],
-                    career_field=cluster['field'],
-                    reasoning=self._generate_career_reasoning(cluster, user_profile),
-                    skills_required=cluster['common_skills'],
-                    growth_potential=cluster['progression_path'],
-                    match_score=cluster['match_score']
-                )
-                # Link example jobs
-                career_rec.example_jobs = self._get_top_examples(cluster['jobs'], 3)
-                career_recs.append(career_rec)
-            
-            return career_recs
-        except Exception as e:
-            print(f"Error generating career recommendations: {str(e)}")
-            return []
+            for idx, job in enumerate(job_recommendations):
+                description = job.get('description', '')
+                title = job.get('title', 'No Title')
+                company = job.get('company_name', 'No Company')
+                location = job.get('location', 'Unknown')
 
-    def calculate_match_score(self, job: Dict, user_profile: UserProfile) -> Tuple[float, List[str], List[str], List[str]]:
+                # Extract industry and skills using semantic analysis
+                extracted_industry = self._extract_industry_semantic(description)
+                extracted_skills = self._extract_skills_semantic(description)
+                
+                # Track patterns
+                industries[extracted_industry] = industries.get(extracted_industry, 0) + 1
+                for skill in extracted_skills:
+                    skill_counts[skill] = skill_counts.get(skill, 0) + 1
+                companies[company] = companies.get(company, 0) + 1
+                locations[location] = locations.get(location, 0) + 1
+                
+                print(f"\nProcessing job {idx + 1}:")
+                print(f"- Title: {title}")
+                print(f"- Company: {company}")
+                print(f"- Industry: {extracted_industry}")
+                print(f"- Location: {location}")
+                print(f"- Extracted Skills: {extracted_skills}")
+
+            return {
+                'top_industries': self._get_top_items(industries, 5),
+                'top_roles': self._get_top_items(roles, 10),
+                'common_skills': self._get_top_items(skill_counts, 10),
+                'top_companies': self._get_top_items(companies, 5),
+                'top_locations': self._get_top_items(locations, 5),
+                'total_jobs': len(job_recommendations)
+            }
+
+        except Exception as e:
+            print(f"Error in job pattern analysis: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return {}
+
+    def _extract_industry_semantic(self, description: str) -> str:
+        """Extract industry using semantic analysis of job description"""
+        # Common industry signals in descriptions
+        industry_signals = {
+            'Healthcare': ['patient', 'clinical', 'medical', 'health', 'hospital', 'care'],
+            'Technology': ['software', 'data', 'digital', 'tech', 'IT', 'computer', 'programming'],
+            'Manufacturing': ['manufacturing', 'production', 'assembly', 'factory', 'industrial'],
+            'Finance': ['financial', 'banking', 'investment', 'trading', 'finance'],
+            'Education': ['education', 'teaching', 'academic', 'school', 'university', 'learning'],
+            'Retail': ['retail', 'store', 'merchandising', 'e-commerce', 'consumer'],
+            'Environmental': ['environmental', 'sustainability', 'renewable', 'recycling', 'waste'],
+            'Aerospace': ['aerospace', 'aviation', 'aircraft', 'flight', 'space'],
+            'Marketing': ['marketing', 'advertising', 'brand', 'campaign', 'media'],
+            'Consulting': ['consulting', 'advisory', 'professional services', 'solutions']
+        }
+        
+        description_lower = description.lower()
+        industry_scores = {}
+        
+        for industry, signals in industry_signals.items():
+            score = sum(signal.lower() in description_lower for signal in signals)
+            if score > 0:
+                industry_scores[industry] = score
+        
+        if industry_scores:
+            return max(industry_scores.items(), key=lambda x: x[1])[0]
+        return "Unknown"
+
+    def _extract_skills_semantic(self, description: str) -> List[str]:
+        """Extract skills using semantic analysis of job description"""
+        # Common skill keywords and phrases
+        skill_patterns = [
+            # Technical Skills
+            r'\b(python|java|javascript|sql|aws|azure|cloud)\b',
+            r'\b(machine learning|ai|artificial intelligence|data science)\b',
+            r'\b(agile|scrum|waterfall|kanban)\b',
+            
+            # Business Skills
+            r'\b(project management|program management|team leadership)\b',
+            r'\b(strategic planning|business development|analytics)\b',
+            r'\b(marketing automation|digital marketing|content strategy)\b',
+            
+            # Soft Skills
+            r'\b(communication skills|leadership|problem solving)\b',
+            r'\b(team collaboration|interpersonal skills|presentation skills)\b',
+            
+            # Tools & Platforms
+            r'\b(salesforce|jira|confluence|git|microsoft office)\b',
+            r'\b(adobe|photoshop|illustrator|indesign)\b'
+        ]
+        
+        extracted_skills = set()
+        description_lower = description.lower()
+        
+        import re
+        for pattern in skill_patterns:
+            matches = re.findall(pattern, description_lower)
+            extracted_skills.update(matches)
+        
+        # Look for skills in requirements/qualifications section
+        req_section = self._extract_requirements_section(description)
+        if req_section:
+            for pattern in skill_patterns:
+                matches = re.findall(pattern, req_section.lower())
+                extracted_skills.update(matches)
+        
+        return list(extracted_skills)
+
+    def _extract_requirements_section(self, description: str) -> str:
+        """Extract the requirements/qualifications section from job description"""
+        requirement_headers = [
+            'requirements', 'qualifications', 'what you need', 
+            'what we\'re looking for', 'skills', 'experience required'
+        ]
+        
+        description_lower = description.lower()
+        for header in requirement_headers:
+            if header in description_lower:
+                start_idx = description_lower.find(header)
+                # Try to find the next section header or end of text
+                next_section = float('inf')
+                for next_header in ['responsibilities', 'about us', 'what we offer']:
+                    idx = description_lower.find(next_header, start_idx + len(header))
+                    if idx != -1:
+                        next_section = min(next_section, idx)
+                
+                if next_section == float('inf'):
+                    return description[start_idx:]
+                return description[start_idx:next_section]
+        
+        return ""
+
+    def _get_top_items(self, items_dict: Dict, limit: int) -> List[str]:
+        """Helper to get top items from a frequency dictionary"""
+        return [item for item, _ in sorted(items_dict.items(), 
+                                         key=lambda x: x[1], 
+                                         reverse=True)[:limit]]
+
+    def calculate_match_score(self, job: Dict, user_profile: Dict) -> Tuple[float, List[str], List[str], List[str]]:
         """Calculate comprehensive match score including skills, culture and values"""
         print("\n=== Calculate Match Score Debug ===")
         print(f"Job Title: {job.get('title')}")
-        print(f"User Skills: {user_profile.skills}")
-        print(f"User Culture: {user_profile.work_culture}")
-        print(f"User Values: {user_profile.core_values}")
+        print(f"User Skills: {user_profile.get('skills', [])}")
+        print(f"User Culture: {user_profile.get('work_culture', [])}")
+        print(f"User Values: {user_profile.get('core_values', [])}")
         
         # Calculate skill match
         skill_match = self._calculate_skill_match(
-            user_profile.skills,
+            user_profile.get('skills', []),
             job.get('required_skills', [])
         )
         print(f"Initial Skill Match Score: {skill_match}")
         
         # Find matching elements with similarity threshold
         matching_skills = [
-            skill for skill in user_profile.skills 
+            skill for skill in user_profile.get('skills', [])
             if self._get_skill_similarity(skill, job.get('description', '')) > 0.3
         ]
         print(f"Matching Skills Found: {matching_skills}")
         
         matching_culture = [
-            culture for culture in user_profile.work_culture 
+            culture for culture in user_profile.get('work_culture', [])
             if self._get_skill_similarity(culture, job.get('description', '')) > 0.3
         ]
         print(f"Matching Culture Found: {matching_culture}")
         
         matching_values = [
-            value for value in user_profile.core_values 
+            value for value in user_profile.get('core_values', [])
             if self._get_skill_similarity(value, job.get('description', '')) > 0.3
         ]
         print(f"Matching Values Found: {matching_values}")
         
         # Calculate component scores
-        skills_score = skill_match if skill_match > 0 else len(matching_skills) / len(user_profile.skills)
-        culture_score = len(matching_culture) / len(user_profile.work_culture) if user_profile.work_culture else 0
-        values_score = len(matching_values) / len(user_profile.core_values) if user_profile.core_values else 0
+        user_skills = user_profile.get('skills', [])
+        user_culture = user_profile.get('work_culture', [])
+        user_values = user_profile.get('core_values', [])
+        
+        skills_score = skill_match if skill_match > 0 else (len(matching_skills) / len(user_skills) if user_skills else 0)
+        culture_score = len(matching_culture) / len(user_culture) if user_culture else 0
+        values_score = len(matching_values) / len(user_values) if user_values else 0
         
         print(f"Component Scores:")
         print(f"- Skills Score: {skills_score}")
@@ -1101,6 +1320,106 @@ Areas for Development:
 
 ------------------------------
 """
+
+    def _extract_skills_from_description(self, description: str) -> List[str]:
+        """Extract skills from job description"""
+        skills = []
+        
+        # Split description into sections
+        sections = description.split('\n')
+        in_skills_section = False
+        current_section = ""
+        
+        # Common section headers that indicate skills
+        skill_headers = [
+            "minimum qualifications",
+            "qualifications",
+            "requirements",
+            "skills",
+            "experience",
+            "technical/soft skills"
+        ]
+        
+        # End markers for skills sections
+        end_markers = [
+            "preferred qualifications",
+            "additional notes",
+            "benefits",
+            "salary range",
+            "about"
+        ]
+        
+        for line in sections:
+            line = line.strip()
+            if not line:
+                continue
+            
+            line_lower = line.lower()
+            
+            # Check if we're entering a skills section
+            if any(header in line_lower for header in skill_headers):
+                in_skills_section = True
+                continue
+            
+            # Check if we're leaving a skills section
+            if any(marker in line_lower for marker in end_markers):
+                in_skills_section = False
+                continue
+            
+            if in_skills_section and line:
+                # Remove bullet points and numbers
+                skill = re.sub(r'^[\u2022\-\*\d.]+\s*', '', line)
+                
+                # Split on periods if the line contains multiple sentences
+                for part in skill.split('.'):
+                    part = part.strip()
+                    if len(part) <= 3:
+                        continue
+                    
+                    # Clean up common prefixes
+                    part = re.sub(r'^(Experience|Knowledge of|Ability to|Strong|Advanced|Proven|Demonstrated)\s+', '', part, flags=re.IGNORECASE)
+                    
+                    # Split on common separators
+                    for subpart in re.split(r'[,;]|\sand\s', part):
+                        subpart = subpart.strip()
+                        if len(subpart) > 3:
+                            skills.append(subpart)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        cleaned_skills = [x for x in skills if not (x in seen or seen.add(x))]
+        
+        return cleaned_skills
+
+    def _extract_industry_from_description(self, description: str, company_name: str) -> str:
+        """Extract industry from job description and company name"""
+        industry_map = {
+            "healthcare": "Healthcare",
+            "cancer": "Healthcare",
+            "medical": "Healthcare",
+            "manufacturing": "Manufacturing",
+            "materials science": "Manufacturing",
+            "chemical": "Manufacturing",
+            "technology": "Technology",
+            "software": "Technology",
+            "financial": "Financial Services",
+            "accounting": "Financial Services",
+            "tax": "Financial Services"
+        }
+        
+        # First check company description (usually in first paragraph)
+        first_para = description.lower().split('\n\n')[0]
+        for keyword, industry in industry_map.items():
+            if keyword in first_para:
+                return industry
+        
+        # Then check full description
+        desc_lower = description.lower()
+        for keyword, industry in industry_map.items():
+            if keyword in desc_lower:
+                return industry
+            
+        return "Unknown"
 
 # @lru_cache()
 # def get_search_service(db: Session):

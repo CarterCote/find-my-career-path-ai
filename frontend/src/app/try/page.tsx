@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 export default function Try() {
     const [currentStep, setCurrentStep] = useState(0);
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [howItWorksDialogOpen, setHowItWorksDialogOpen] = useState(false);
     const [skills, setSkills] = useState([
         "build", "design/create", "customer/client focus", "persuade/sell", 
         "programming", "solve complex problems", "think critically", 
@@ -117,27 +118,49 @@ export default function Try() {
   return (
     <div className="min-h-screen p-8 pb-20 gap-16 sm:p-2">
       <Header />
-      <main className="flex flex-col gap-8 items-center sm:items-start w-full relative min-h-screen">
+      <main className="flex items-center justify-center min-h-[82vh]">
         <AnimatePresence mode="wait">
           {currentStep === 0 && (
             <motion.div
               key="step0"
-              className="w-1/3 mx-auto flex-col justify-center space-y-6 items-start py-24"
+              className="w-1/2 flex flex-col justify-center space-y-6 items-start py-24"
               variants={fadeVariants}
               initial="initial"
               animate="animate"
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-              <p className="font-circular font-bold text-4xl tracking-tight">How this works</p>
-              <div className="flex flex-col space-y-4">
-                <p>Using AI, Pathways transforms a user's skills, values, and interests into tailored career pathway recommendations, drawing on real-world examples from individuals with similar backgrounds who are actively pursuing those paths.</p>
-                <p>The system then fine-tunes these recommendations to reflect the user's unique preferences, prioritizing the most relevant options.</p>
-                <p>As users engage with the suggestions and provide feedback, Pathways adapts by learning from this input, continuously refining its recommendations to support the user's career journey as it evolves.</p>
-                <p>You will begin with an onboarding assessment that determines the skills, work culture, and core values that are important to you in your ideal career path.</p>
-
+              <div className="flex flex-row space-x-2 items-center">
+                <div className="flex flex-row space-x-2 bg-[#f28d3533] px-3 py-1 rounded-full">
+                  <p className="font-semibold text-sm text-[#f28d35]">Alpha</p>
+                </div>
+                <p className="text-[16px] font-bold">This system is currently in an alpha stage.</p>
+                <a href="mailto:chcote@stanford.edu" className="underline font-medium">Share your feedback here.</a>
               </div>
-              <Button variant="secondary" onClick={handleNext}>Start</Button>
+              <p className="font-circular font-bold text-4xl tracking-tight">Take the Pathways assessment</p>
+              <div className="flex flex-col space-y-4">
+                <p className="">We'll make connections between the skills you enjoy using, work environments where you thrive, and values that drive you. Then, our AI system will match you with personalized career pathways, and outline the steps to help you get there.</p>
+              </div>
+              <div className="flex flex-row items-center space-x-3">
+                <Button variant="secondary" onClick={handleNext}>Take the survey</Button>
+                <Button className="bg-[#0C3C60] rounded-xl py-3" onClick={() => setHowItWorksDialogOpen(true)}>How it works</Button>
+              </div>
+              <Dialog open={howItWorksDialogOpen} onOpenChange={setHowItWorksDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="font-circular font-bold text-3xl tracking-tight">How this works</DialogTitle>
+                    </DialogHeader>
+                    <DialogDescription>
+                        <div className="flex flex-col space-y-4 leading-[180%]">
+                            <p className="">Using AI, Pathways transforms a user's skills, values, and interests into tailored career pathway recommendations, drawing on real-world examples from individuals with similar backgrounds who are actively pursuing those paths.</p>
+                            <p>The system then fine-tunes these recommendations to reflect the user's unique preferences, prioritizing the most relevant options.</p>
+                            <p>As users engage with the suggestions and provide feedback, Pathways adapts by learning from this input, continuously refining its recommendations to support the user's career journey as it evolves.</p>
+                            <p>You will begin with an onboarding assessment that determines the skills, work culture, and core values that are important to you in your ideal career path.</p>
+                        </div>
+                    </DialogDescription>
+                    <Button className="mt-4" variant="secondary" onClick={() => setHowItWorksDialogOpen(false)}>Close</Button>
+                </DialogContent>
+              </Dialog>
             </motion.div>
           )}
 
@@ -228,7 +251,7 @@ export default function Try() {
               <div>
                 <p className="font-circular font-bold text-4xl tracking-tight mb-2">Skills</p>
                 <p className="font-circular font-medium text-xl tracking-tight "><span className="font-bold text-tertiaryBlue">Guiding Question: </span>What skills would I like to be using most at work?</p>
-                <p className="font-circular font-medium text-xl tracking-tight"><span className="font-bold text-tertiaryBlue">Action: </span>Sort the skills cards according to the level of enjoyment for you. Don’t worry about your skill level.</p>
+                <p className="font-circular font-medium text-xl tracking-tight"><span className="font-bold text-tertiaryBlue">Action: </span>Sort the skills cards according to the level of enjoyment for you. Don't worry about your skill level.</p>
 
               </div>
               <div className="flex flex-row space-x-4">
@@ -282,74 +305,6 @@ export default function Try() {
               </div>
             </motion.div>
           )}
-
-          {/* {currentStep === 4 && (
-            <motion.div
-              key="step4"
-              className="mx-auto flex-col justify-center space-y-6 items-start py-12 w-[92%]"
-              variants={fadeVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <p className="font-circular font-bold text-4xl tracking-tight mb-2">Select Your Top 5 Skills</p>
-                <p className="font-circular font-medium text-xl tracking-tight">
-                  <span className="font-bold text-tertiaryBlue">Action: </span>
-                  From your high-priority skills, drag your top 5 into the slots below.
-                </p>
-              </div>
-
-              <div className="flex flex-col space-y-8 w-full">
-                <div className="flex flex-row flex-wrap gap-4 p-4 min-h-[100px] bg-gray-100 rounded-lg">
-                  {highSkills.map((skill) => (
-                    <div
-                      key={skill}
-                      className="px-4 py-2 bg-white rounded-lg shadow cursor-move"
-                      draggable
-                    >
-                      {skill}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-row justify-between w-full">
-                  {[1, 2, 3, 4, 5].map((slot) => (
-                    <div
-                      key={slot}
-                      className="w-[180px] h-[100px] bg-gray-200 rounded-lg flex items-center justify-center"
-                    >
-                      {topFiveSkills[slot - 1] || `Slot ${slot}`}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-row items-center w-full justify-between mt-8">
-                <Button variant="secondary" onClick={handleBack}>Back</Button>
-                <div className="flex flex-row space-x-2 items-center">
-                  {[1, 2, 3, 4, 5, 6, 7].map((step) => (
-                    <button
-                      key={step}
-                      onClick={() => setCurrentStep(step)}
-                      className={`w-[36px] h-[36px] flex items-center justify-center rounded-lg
-                        ${currentStep === step ? 'bg-tertiaryBlue text-primaryBlue' : 'bg-secondaryBlue text-white'}`}
-                    >
-                      {step}
-                    </button>
-                  ))}
-                </div>
-                <Button 
-                  variant="secondary" 
-                  onClick={handleNext}
-                  disabled={topFiveSkills.length !== 5}
-                >
-                  Next
-                </Button>
-              </div>
-            </motion.div>
-          )} */}
 
           {currentStep === 4 && (
             <motion.div

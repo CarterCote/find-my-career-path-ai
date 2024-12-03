@@ -17,10 +17,15 @@ const SiteMenu = ({ useBold = false, vertical = false, textAlign = 'text-center'
   return (
     <div className={`${textAlign} flex ${layoutClass} md:text-left`}>
       {navItems.map((item) => (
-        item.name === "DONATE" ? (
-          <a key={item.link} href={item.link} target="_blank" rel="noopener noreferrer">
-            <h2 className={` text-[15px] transition duration-500 hover:text-[#414141]`}>{item.name}</h2>
-          </a>
+        item.name === "Take the survey" ? (
+          <div className="flex flex-row space-x-2 items-center hover:opacity-60 transition-all duration-500 hover:cursor-pointer">
+            <a key={item.link} href={item.link}>
+              <h2 className={` text-[15px] transition duration-500`}>{item.name}</h2>
+            </a>
+            <div className="flex flex-row space-x-2 bg-[#f28d3533] px-2 py-0.5 rounded-full">
+              <p className="font-semibold text-xs text-[#f28d35]">Alpha</p>
+            </div>
+          </div>
         ) : (
           <Link key={item.link} href={item.link}>
             <h2 className={`text-[15px] transition duration-500 hover:text-[#414141]`}>{item.name}</h2>

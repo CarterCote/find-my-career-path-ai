@@ -1,6 +1,9 @@
 import requests
 import json
 import random
+import matplotlib.pyplot as plt
+from datetime import datetime
+from typing import Dict, List
 
 def display_evaluations(evaluations_data):
     """Helper function to display evaluation results consistently"""
@@ -46,6 +49,42 @@ def display_evaluations(evaluations_data):
                     print(f"- {detail}")
     else:
         print("No evaluation results available")
+
+def plot_performance_data(performance_data: Dict):
+    """Plot performance metrics from the API response"""
+    try:
+        metrics_history = performance_data.get('metrics_history', {})
+        timestamps = [datetime.fromisoformat(ts) for ts in performance_data.get('timestamp', [])]
+        
+        if not metrics_history or not timestamps:
+            print("No performance data available to plot")
+            return
+            
+        plt.figure(figsize=(12, 8))
+        
+        # Plot metrics
+        plt.subplot(2, 1, 1)
+        for metric, values in metrics_history.items():
+            if metric != 'user_satisfaction':
+                plt.plot(timestamps, values, label=metric.replace('_', ' ').title())
+        plt.title('Model Performance Metrics Over Time')
+        plt.legend()
+        
+        # Plot user satisfaction
+        plt.subplot(2, 1, 2)
+        if 'user_satisfaction' in metrics_history:
+            plt.plot(timestamps, metrics_history['user_satisfaction'], label='User Satisfaction')
+        plt.title('User Satisfaction Score Over Time')
+        plt.legend()
+        
+        # Save the plot
+        plt.tight_layout()
+        plt.savefig('experiments/learning_curves.png')
+        plt.close()
+        
+        print("\nPerformance visualization saved to experiments/learning_curves.png")
+    except Exception as e:
+        print(f"Error plotting performance data: {str(e)}")
 
 def chat():
     print("\nCareer Path AI Assistant")
@@ -157,8 +196,8 @@ def chat():
     
     print(f"\nDebug - Raw response from /chat:")
     print(f"Status code: {questions_response.status_code}")
-    print(f"Headers: {dict(questions_response.headers)}")
-    print(f"Content: {questions_response.content}")
+    # print(f"Headers: {dict(questions_response.headers)}")
+    # print(f"Content: {questions_response.content}")
     
     if questions_response.status_code != 200:
         print("\nError starting Q&A:", questions_response.status_code)
@@ -222,6 +261,10 @@ def chat():
             # Handle evaluations if present
             if 'evaluation' in recommendations:
                 display_evaluations(recommendations['evaluation'])
+            
+            # Plot performance data if available
+            if 'performance_data' in recommendations:
+                plot_performance_data(recommendations['performance_data'])
             
             # Ask user what to do next
             while True:
