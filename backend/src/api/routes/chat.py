@@ -28,11 +28,11 @@ async def chat(
             
             # Get AI response using the chat method
             print(f"Debug - About to call search service chat")
-            response = search_service.chat(
+            response = await search_service.chat(
                 message=message,
                 chat_session_id=chat_session_id
             )
-            print(f"Debug - Got response from search service: {response}")
+            # print(f"Debug - Got response from search service: {response}")
             
             # Validate response format
             if not isinstance(response, dict) or 'response' not in response:

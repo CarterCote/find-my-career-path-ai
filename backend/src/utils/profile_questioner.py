@@ -10,7 +10,7 @@ class ProfileQuestioner:
     def __init__(self, settings):
         self.llm = ChatOpenAI(
             temperature=0.7,
-            model_name="gpt-4-turbo-preview",
+            model_name="gpt-4o",
             api_key=settings.openai_api_key
         )
         
@@ -166,16 +166,27 @@ class ProfileQuestioner:
             print(f"Additional Interests: {formatted_profile['additional_interests']}")
             print("================")
             
-            # First 4 questions use INITIAL_QUESTION_PROMPT but consider previous responses
-            if qa_count < 4:
-                print(f"\nGenerating core question {qa_count + 1}/4...")
+            # Determine missing fields
+            missing_fields = []
+            if not formatted_profile['skills']:
+                missing_fields.append('skills')
+            if not formatted_profile['work_culture']:
+                missing_fields.append('work environment preferences')
+            
+            # Use INITIAL_QUESTION_PROMPT only for the first question
+            if qa_count == 0:
+                print(f"\nGenerating initial question...")
                 context = self._build_context(formatted_profile, previous_qa, is_core_question=True)
             else:
-                # After 4 questions, use optimizer and FOLLOW_UP_QUESTION_PROMPT
+                # Use FOLLOW_UP_QUESTION_PROMPT for subsequent questions
                 print("\nGenerating follow-up question...")
                 print("\nOptimizing prompt based on previous responses...")
                 self.optimize_prompt(formatted_profile, previous_qa)
                 context = self._build_context(formatted_profile, previous_qa, is_core_question=False)
+                
+                # If there are missing fields, explicitly ask about them
+                if missing_fields:
+                    context += f"\n\nWe still need to understand your {', '.join(missing_fields)}. Could you provide more details on these aspects?"
 
             messages = [{
                 "role": "system",

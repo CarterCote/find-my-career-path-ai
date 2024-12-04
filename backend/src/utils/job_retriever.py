@@ -33,15 +33,45 @@ class JobSearchRetriever(BaseRetriever):
         self.graph = self.job_graph.build_graph(jobs_df)
     
     def search_jobs(self, query: str, filters: Dict = None):
-        """Main search function that uses the selected strategy"""
-        if self.strategy == SearchStrategy.GRAPH:
-            return self.graph_enhanced_search(query, filters)
-        elif self.strategy == SearchStrategy.SEMANTIC:
-            return self.semantic_search(query, filters)
-        elif self.strategy == SearchStrategy.SPARSE:
-            return self.sparse_search(query, filters)
-        elif self.strategy == SearchStrategy.HYBRID:
-            return self.hybrid_search(query, filters)
+        """Two-stage retrieval: sparse then dense"""
+        try:
+            print("\n========== TWO-STAGE RETRIEVAL DEBUG ==========")
+            filters = filters or {}
+            
+            # Stage 1: Sparse Retrieval (Quick Filtering)
+            print("1. Stage 1 - Sparse Retrieval (Hard Constraints)")
+            sparse_results = self.sparse_search(
+                query,
+                filters={
+                    'skills': filters.get('skills', []),
+                    'work_culture': filters.get('work_culture', []),
+                    'core_values': filters.get('core_values', []),
+                    'limit': 1000  # Larger pool for semantic search
+                }
+            )
+            print(f"Found {len(sparse_results)} candidates after sparse filtering")
+            
+            if not sparse_results:
+                return []
+                
+            # Stage 2: Dense Retrieval using semantic_search
+            print("\n2. Stage 2 - Dense Retrieval (Semantic Search)")
+            job_ids = [job['job_id'] for job in sparse_results]
+            
+            semantic_results = self.semantic_search(
+                query,
+                filters={
+                    'job_ids': job_ids,  # Only search within sparse results
+                    'limit': 100  # Return 100 for QA evaluation
+                }
+            )
+            
+            print(f"\nReturning top {len(semantic_results)} semantically matched results for QA evaluation")
+            return semantic_results
+            
+        except Exception as e:
+            print(f"Error in search_jobs: {str(e)}")
+            return []
     
     def semantic_search(self, query: str, filters: Dict = None):
         try:
@@ -167,42 +197,55 @@ class JobSearchRetriever(BaseRetriever):
         try:
             print("\n========== SPARSE SEARCH DEBUG ==========")
             filters = filters or {}
-            required_terms = []
             
-            # Extract search terms from filters
-            if 'skills' in filters:
-                required_terms.extend(filters['skills'])
-            if 'work_culture' in filters:
-                required_terms.extend(filters['work_culture'])
-            if 'core_values' in filters:
-                required_terms.extend(filters['core_values'])
+            # Helper function to format terms for tsquery
+            def format_for_tsquery(terms):
+                formatted_terms = []
+                for term in terms:
+                    # Replace spaces and special chars with underscores
+                    clean_term = term.replace('/', ' ').replace('-', ' ')
+                    # Split into words and join with |
+                    words = [word.strip() for word in clean_term.split() if word.strip()]
+                    formatted_terms.extend(words)
+                # Join all terms with | (OR)
+                return ' | '.join(formatted_terms)
             
-            print(f"1. Required terms for sparse search: {required_terms}")
+            # Format terms for each category
+            skills_terms = format_for_tsquery(filters.get('skills', []))
+            culture_terms = format_for_tsquery(filters.get('work_culture', []))
+            values_terms = format_for_tsquery(filters.get('core_values', []))
             
-            # Format terms for tsquery
-            formatted_terms = []
-            for term in required_terms:
-                if ' ' in term:
-                    # For multi-word terms, connect words with &
-                    formatted_term = '&'.join(term.split())
-                else:
-                    formatted_term = term
-                formatted_terms.append(formatted_term)
+            print(f"1. Filter terms:")
+            print(f"Skills: {skills_terms}")
+            print(f"Culture: {culture_terms}")
+            print(f"Values: {values_terms}")
             
-            query_string = ' | '.join(formatted_terms)
-            print(f"2. Formatted query string: {query_string}")
-            
-            # Build SQL query for sparse search
+            # Build SQL query with more flexible matching
             sql = """
             WITH job_matches AS (
                 SELECT 
-                    p.*,
+                    p.job_id,
+                    p.title,
+                    p.company_name,
+                    p.description,
+                    p.location,
+                    p.min_salary,
+                    p.max_salary,
                     ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
-                           to_tsquery('english', :query_terms)) as text_score
+                           to_tsquery('english', :skills_terms)) as skills_score,
+                    ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                           to_tsquery('english', :culture_terms)) as culture_score,
+                    ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                           to_tsquery('english', :values_terms)) as values_score
                 FROM postings p
-                WHERE to_tsvector('english', p.description || ' ' || p.title) @@ to_tsquery('english', :query_terms)
-                ORDER BY text_score DESC
-                LIMIT :limit
+                WHERE 
+                    -- Require some minimum matching in each category
+                    ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                           to_tsquery('english', :skills_terms)) > 0.01
+                    AND ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                               to_tsquery('english', :culture_terms)) > 0.01
+                    AND ts_rank(to_tsvector('english', p.description || ' ' || p.title), 
+                               to_tsquery('english', :values_terms)) > 0.01
             )
             SELECT 
                 job_id,
@@ -212,18 +255,25 @@ class JobSearchRetriever(BaseRetriever):
                 location,
                 min_salary,
                 max_salary,
-                text_score
+                (skills_score + culture_score + values_score) as text_score,
+                skills_score,
+                culture_score,
+                values_score
             FROM job_matches
+            ORDER BY text_score DESC
+            LIMIT :limit
             """
             
             params = {
-                'query_terms': query_string,
+                'skills_terms': skills_terms,
+                'culture_terms': culture_terms,
+                'values_terms': values_terms,
                 'limit': filters.get('limit', 100)
             }
             
-            print(f"3. Executing sparse search...")
+            print(f"2. Executing sparse search with category-specific filters...")
             results = self.db.execute(text(sql), params).fetchall()
-            print(f"4. Found {len(results)} results in sparse search")
+            print(f"3. Found {len(results)} results matching ALL filter criteria")
             
             # Convert results to list of dicts
             formatted_results = []
@@ -236,11 +286,21 @@ class JobSearchRetriever(BaseRetriever):
                     'location': row.location,
                     'min_salary': row.min_salary,
                     'max_salary': row.max_salary,
-                    'relevance_score': float(row.text_score)  # Convert Decimal to float
+                    'relevance_score': float(row.text_score),
+                    'scores': {
+                        'skills': float(row.skills_score),
+                        'culture': float(row.culture_score),
+                        'values': float(row.values_score)
+                    }
                 }
                 formatted_results.append(job_dict)
+                
+                print(f"\nJob: {job_dict['title']}")
+                print(f"Skills Score: {job_dict['scores']['skills']:.3f}")
+                print(f"Culture Score: {job_dict['scores']['culture']:.3f}")
+                print(f"Values Score: {job_dict['scores']['values']:.3f}")
+                print(f"Total Score: {job_dict['relevance_score']:.3f}")
             
-            print("=" * 50)
             return formatted_results
             
         except Exception as e:

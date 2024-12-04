@@ -93,13 +93,16 @@ class JobSearchService:
             chat_prompt=self.conversation_prompt,
             verbose=True
         )
+        
+        # Initialize cache for full results
+        self.full_results_cache = {}
 
     def get_session_history(self, chat_session_id: str) -> ChatMessageHistory:
         if chat_session_id not in self.store:
             self.store[chat_session_id] = ChatMessageHistory()
         return self.store[chat_session_id]
 
-    def chat(self, message: str, chat_session_id: str = "default") -> Dict:
+    async def chat(self, message: str, chat_session_id: str) -> Dict:
         try:
             print("\n========== CHAT METHOD DEBUG ==========")
             print(f"1. Processing message for session: {chat_session_id}")
@@ -107,7 +110,7 @@ class JobSearchService:
             state = self.qa_state.get(chat_session_id)
             print(f"2. Current state: {state}")
             
-            # Get user profile once at the beginning
+            # We already get user profile here!
             user_profile = self.db.query(UserProfile).filter(
                 UserProfile.user_session_id == chat_session_id
             ).first()
@@ -132,7 +135,7 @@ class JobSearchService:
                 
                 # Get initial recommendations using sparse search
                 print("4. Getting initial job recommendations...")
-                initial_recommendations = self.get_initial_recommendations(profile_data)
+                initial_recommendations = self.get_initial_recommendations(profile_data, chat_session_id)
                 if not initial_recommendations:
                     print("Error: No initial recommendations found")
                     return {
@@ -224,13 +227,13 @@ class JobSearchService:
                         state.get("initial_recommendations", []),
                         [self.profile_questioner.process_response(qa["question"], qa["response"]) 
                          for qa in state["previous_qa"]],
-                        state["profile_data"]
+                        state["profile_data"],
+                        chat_session_id
                     )
                     
-                    if refined_results and refined_results.get('recommendations'):
-                        top_jobs = refined_results['recommendations'][:5]
+                    if refined_results and len(refined_results) > 0:  # Check if list has items
                         stored_recs = self.store_recommendations(
-                            top_jobs,
+                            refined_results,  # Pass the list directly
                             chat_session_id,
                             user_profile.id,
                             'refined'
@@ -244,7 +247,10 @@ class JobSearchService:
                             "chat_session_id": chat_session_id,
                             "qa_complete": True,
                             "recommendations": stored_recs,
-                            "evaluation": refined_results.get('evaluation', {})
+                            "evaluation": {
+                                'recommendations': refined_results,
+                                'count': len(refined_results)
+                            }
                         }
                 
                 # Generate next question
@@ -491,14 +497,35 @@ class JobSearchService:
     def _get_skill_similarity(self, skill: str, text: str) -> float:
         """Calculate semantic similarity between a skill and text"""
         try:
-            print(f"\n=== Skill Similarity Debug ===")
-            print(f"Comparing: '{skill}' with text length: {len(text)}")
+            # print(f"\n=== Skill Similarity Debug for {skill} ===")
+            
+            # First check for exact match (case-insensitive)
+            if skill.lower() in text.lower():
+                print(f"Exact match found for '{skill}'")
+                return 1.0
             
             # Clean inputs
             skill = skill.lower().strip()
             text = text.lower().strip()
             
-            # Get embeddings
+            # For software engineering skills, add common variations
+            tech_variations = {
+                'python': ['py', 'python3'],
+                'javascript': ['js', 'node.js', 'nodejs'],
+                'java': ['java programming', 'core java'],
+                'software engineering': ['software development', 'software engineer', 'programming'],
+                'backend': ['back end', 'back-end', 'server-side'],
+                'frontend': ['front end', 'front-end', 'client-side'],
+            }
+            
+            # Check variations if skill is in our tech dictionary
+            if skill in tech_variations:
+                for variation in tech_variations[skill]:
+                    if variation in text:
+                        print(f"Variation match found: '{variation}' for skill '{skill}'")
+                        return 1.0
+            
+            # Get embeddings for semantic similarity
             skill_embedding = self.retriever.embed_model.encode(skill)
             text_embedding = self.retriever.embed_model.encode(text)
             
@@ -508,13 +535,13 @@ class JobSearchService:
                 [text_embedding]
             )[0][0]
             
-            print(f"Similarity Score: {similarity}")
+            # print(f"Semantic similarity for '{skill}': {similarity}")
             return float(similarity)
             
         except Exception as e:
             print(f"Error in skill similarity: {str(e)}")
             print(f"Skill: {skill}")
-            print(f"Text snippet: {text[:100]}...")  # Print first 100 chars of text
+            print(f"Text snippet: {text[:100]}...")
             return 0.0
 
     def filter_irrelevant_jobs(self, jobs: List[Dict], query: str, user_profile: Optional[UserProfile] = None) -> List[Dict]:
@@ -674,45 +701,53 @@ class JobSearchService:
         
         for result in results:
             print(f"\nScoring job: {result.get('title')}")
+            description = result.get('description', '').lower()
+            title = result.get('title', '').lower()
+            combined_text = f"{title} {description}"
             
-            # Calculate match scores with semantic similarity
-            skill_match = self._calculate_skill_match(
-                profile_data.get('skills', []),
-                result.get('required_skills', [])
-            )
+            # Adjust skill scoring to weight technical/builder skills higher
+            technical_skills = {'build', 'programming', 'technical expertise', 'design/create'}
+            
+            # Calculate skill scores with higher weight for technical matches
+            skill_scores = []
+            for skill in profile_data.get('skills', []):
+                similarity = self._get_skill_similarity(skill, combined_text)
+                if skill.lower() in technical_skills:
+                    similarity *= 2.0
+                skill_scores.append(similarity)
+            
+            skill_match = sum(score for score in skill_scores if score > 0.2) / len(skill_scores) if skill_scores else 0.0
             print(f"- Skill match: {skill_match:.2f}")
             
-            # Extract culture from description if not explicitly provided
-            job_culture = result.get('company_culture', [])
-            if not job_culture:
-                description = result.get('description', '')
-                # Look for culture keywords in description
-                culture_keywords = ['culture', 'environment', 'workplace', 'team']
-                job_culture = [word for word in description.lower().split() 
-                              if any(keyword in word for keyword in culture_keywords)]
-            
-            culture_match = self._calculate_culture_match(
-                profile_data.get('work_culture', []),
-                job_culture
-            )
+            # Culture matching - use direct/partial matching
+            culture_matches = [
+                culture for culture in profile_data.get('work_culture', [])
+                if culture.lower() in combined_text or 
+                any(word in combined_text for word in culture.lower().split())
+            ]
+            culture_match = len(culture_matches) / len(profile_data.get('work_culture', [])) if profile_data.get('work_culture') else 0.0
             print(f"- Culture match: {culture_match:.2f}")
             
-            # Use skill similarity for core values (since we already have this method)
-            values_match = 0.0
-            description = result.get('description', '')
-            if description and profile_data.get('core_values'):
-                values_scores = [
-                    self._get_skill_similarity(value, description)
-                    for value in profile_data.get('core_values', [])
-                ]
-                values_match = sum(score for score in values_scores if score > 0.3) / len(values_scores) if values_scores else 0.0
+            # Values matching - use direct/partial matching
+            value_matches = [
+                value for value in profile_data.get('core_values', [])
+                if value.lower() in combined_text or 
+                any(word in combined_text for word in value.lower().split())
+            ]
+            values_match = len(value_matches) / len(profile_data.get('core_values', [])) if profile_data.get('core_values') else 0.0
             print(f"- Values match: {values_match:.2f}")
             
-            # Weighted scoring
+            # Debug matches found
+            if culture_matches:
+                print(f"Matching culture terms: {culture_matches}")
+            if value_matches:
+                print(f"Matching value terms: {value_matches}")
+            
+            # Adjusted weighting (80/15/5 split)
             match_score = (
-                skill_match * 0.5 +          # 50% weight on skills
-                culture_match * 0.3 +        # 30% weight on culture
-                values_match * 0.2           # 20% weight on values
+                skill_match * 0.8 +          # 80% weight on skills
+                culture_match * 0.15 +       # 15% weight on culture
+                values_match * 0.05          # 5% weight on values
             )
             print(f"- Overall score: {match_score:.2f}")
             
@@ -816,26 +851,25 @@ class JobSearchService:
             'performance_trends': self.performance_tracker.metrics_history
         }
 
-    def get_initial_recommendations(self, user_profile: Dict) -> List[Dict]:
-        """Get initial recommendations based on hard constraints"""
+    def get_initial_recommendations(self, user_profile: Dict, chat_session_id: str) -> List[Dict]:
         try:
             print("\n========== INITIAL RECOMMENDATIONS DEBUG ==========")
             print("1. Starting initial recommendations search")
             
-            # Create search parameters from profile for sparse search
+            # Create search parameters from profile
             required_terms = []
             required_terms.extend(user_profile.get('skills', []))
             required_terms.extend(user_profile.get('work_culture', []))
             required_terms.extend(user_profile.get('core_values', []))
             
-            print(f"2. Using hard constraints (required terms):")
+            print(f"2. Using profile terms:")
             print(f"- Skills: {user_profile.get('skills', [])}")
             print(f"- Work Culture: {user_profile.get('work_culture', [])}")
             print(f"- Core Values: {user_profile.get('core_values', [])}")
             
-            # Use sparse search to filter by hard constraints
-            print("\n3. Performing sparse search with hard constraints...")
-            sparse_results = self.retriever.sparse_search(
+            # Use two-stage retrieval
+            print("\n3. Performing two-stage retrieval...")
+            all_results = self.retriever.search_jobs(
                 query=' '.join(required_terms),
                 filters={
                     'skills': user_profile.get('skills', []),
@@ -844,47 +878,23 @@ class JobSearchService:
                 }
             )
             
-            if not sparse_results:
-                print("No results found after sparse search")
+            if not all_results:
+                print("No results found")
                 return []
             
-            print(f"4. Sparse search found {len(sparse_results)} matching jobs")
+            print(f"\n4. Found {len(all_results)} semantically matched jobs")
             
-            # Then do semantic search on the filtered results
-            print("\n5. Performing semantic search on filtered results...")
-            semantic_results = self.retriever.semantic_search(
-                query=' '.join(required_terms),
-                filters={
-                    'job_ids': [r['job_id'] for r in sparse_results]  # Use dict access
-                }
-            )
+            # Store full results set in cache
+            self.full_results_cache[chat_session_id] = all_results
             
-            if not semantic_results:
-                print("No results found after semantic search")
-                return sparse_results[:100]  # Return up to 100 sparse results if semantic fails
-            
-            print(f"6. Semantic search refined to {len(semantic_results)} jobs")
-            
-            # Rank results by profile match
-            print("\n7. Ranking results by profile match...")
+            # Rank initial subset for display
+            print("\n5. Ranking initial subset for display...")
             ranked_results = self._rank_by_profile_match(
-                semantic_results,
-                {
-                    'skills': user_profile.get('skills', []),
-                    'work_culture': user_profile.get('work_culture', []),
-                    'core_values': user_profile.get('core_values', [])
-                }
+                all_results,  # Only rank top 20 for initial display
+                user_profile
             )
             
-            print(f"8. Final recommendations count: {len(ranked_results)}")
-            print("9. Top recommendations:")
-            for i, job in enumerate(ranked_results[:5], 1):
-                # Access the correct score path
-                score = job.get('profile_match', {}).get('overall_score', 0)
-                print(f"   {i}. {job.get('title')} - Score: {score:.2f}")
-            print("=" * 50)
-            
-            return ranked_results
+            return ranked_results[:10]  # Return top 10 for initial display
             
         except Exception as e:
             print(f"Error in initial recommendations: {str(e)}")
@@ -892,10 +902,14 @@ class JobSearchService:
             print(f"Traceback:\n{traceback.format_exc()}")
             return []
 
-    def refine_recommendations(self, initial_results: List[Dict], qa_responses: List[Dict], user_profile: Dict) -> Dict:
+    def refine_recommendations(self, initial_results: List[Dict], qa_responses: List[Dict], 
+                             user_profile: Dict, chat_session_id: str) -> List[Dict]:
         try:
-            print("\n========== REFINING RECOMMENDATIONS ==========")
-            print(f"1. Processing {len(qa_responses)} Q&A responses")
+            # Get full results from cache using session ID
+            all_results = self.full_results_cache.get(chat_session_id, [])
+            if not all_results:
+                print("Warning: No cached results found for session")
+                all_results = initial_results
             
             # Update profile with soft constraints from Q&A
             enhanced_profile = user_profile.copy()
@@ -909,29 +923,29 @@ class JobSearchService:
                 if response.get('industry'):
                     enhanced_profile.setdefault('industries', []).append(response['industry'])
 
-            print(f"2. Enhanced profile: {json.dumps(enhanced_profile, indent=2)}")
+            # print(f"2. Enhanced profile: {json.dumps(enhanced_profile, indent=2)}")
             
-            # First use calculate_match_score for initial scoring
+            # Score ALL results with enhanced profile
+            print("3. Scoring all results with enhanced profile...")
             scored_results = []
-            for job in initial_results[:5]:  # Process top 5
+            for job in all_results:  # Use full result set
                 try:
                     match_score, matching_skills, matching_culture, matching_values = self.calculate_match_score(
                         job, 
                         enhanced_profile
                     )
                     
-                    # Structure the job with required fields
                     scored_job = {
                         'job_id': job.get('job_id'),
                         'title': job.get('title'),
                         'company_name': job.get('company_name'),
                         'location': job.get('location', ''),
                         'description': job.get('description', ''),
-                        'match_score': float(match_score),  # Ensure float type
+                        'match_score': float(match_score),
                         'matching_skills': matching_skills,
                         'matching_culture': matching_culture,
                         'matching_values': matching_values,
-                        'user_id': enhanced_profile.get('user_id'),  # Required field
+                        'user_id': enhanced_profile.get('user_id'),
                         'recommendation_type': 'refined',
                         'preference_version': 1
                     }
@@ -941,13 +955,36 @@ class JobSearchService:
                     print(f"Error scoring job {job.get('title')}: {str(e)}")
                     continue
             
+            # Sort scored results by match score in descending order
+            scored_results.sort(key=lambda x: x['match_score'], reverse=True)
+            
+            # Track companies to limit duplicates
+            company_count = {}
+            unique_results = []
+            seen_jobs = set()
+            for job in scored_results:
+                company = job['company_name']
+                job_identifier = (job['title'], company)
+                
+                # Skip if we already have 2 jobs from this company
+                if company_count.get(company, 0) >= 2:
+                    continue
+                    
+                if job_identifier not in seen_jobs:
+                    seen_jobs.add(job_identifier)
+                    company_count[company] = company_count.get(company, 0) + 1
+                    unique_results.append(job)
+                    
+                if len(unique_results) >= 5:
+                    break
+            
             # Use evaluate_recommendations for additional insights
-            evaluation_results = self.evaluate_recommendations(scored_results, enhanced_profile)
+            evaluation_results = self.evaluate_recommendations(unique_results, enhanced_profile)
             print(f"3. Evaluation complete: {len(evaluation_results.get('evaluations', []))} evaluations")
             
             # Combine scores and evaluation data
             final_results = []
-            for job, evaluation in zip(scored_results, evaluation_results.get('evaluations', [])):
+            for job, evaluation in zip(unique_results, evaluation_results.get('evaluations', [])):
                 try:
                     detailed_eval = evaluation['detailed_evaluation']
                     
@@ -985,31 +1022,14 @@ class JobSearchService:
             
             print(f"\n4. Processed {len(final_results)} final recommendations")
             
-            # Generate and save performance plots
-            performance_data = {
-                'metrics_history': self.performance_tracker.metrics_history,
-                'timestamp': self.performance_tracker.timestamp
-            }
+            # Return the top 5 unique recommendations
+            return final_results
             
-            return {
-                'recommendations': final_results,
-                'evaluation': {
-                    'qa_responses': qa_responses,
-                    'enhanced_profile': enhanced_profile,
-                    'metrics': evaluation_results.get('metrics', {}),
-                    'performance_trends': evaluation_results.get('performance_trends', []),
-                    'performance_data': performance_data
-                }
-            }
-                    
         except Exception as e:
-            print(f"Error in refining recommendations: {str(e)}")
+            print(f"Error refining recommendations: {str(e)}")
             import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-            return {
-                'recommendations': [],
-                'evaluation': {}
-            }
+            print(f"Traceback:\n{traceback.format_exc()}")
+            return []
     
     def store_recommendations(self, recommendations: List[Dict], chat_session_id: str, user_id: int, recommendation_type: str = 'initial'):
         """Store job recommendations for a user session"""
@@ -1030,7 +1050,6 @@ class JobSearchService:
                     
                     # Create a dictionary with only the fields needed by create_job_recommendation
                     job_data = {
-                        # Remove db from job_data as it's a separate parameter
                         'user_id': user_id,
                         'chat_session_id': chat_session_id,
                         'job_id': rec.get('job_id'),
@@ -1258,60 +1277,90 @@ class JobSearchService:
         """Calculate comprehensive match score including skills, culture and values"""
         print("\n=== Calculate Match Score Debug ===")
         print(f"Job Title: {job.get('title')}")
-        print(f"User Skills: {user_profile.get('skills', [])}")
-        print(f"User Culture: {user_profile.get('work_culture', [])}")
-        print(f"User Values: {user_profile.get('core_values', [])}")
         
-        # Calculate skill match
-        skill_match = self._calculate_skill_match(
-            user_profile.get('skills', []),
-            job.get('required_skills', [])
-        )
-        print(f"Initial Skill Match Score: {skill_match}")
+        description = job.get('description', '').lower()
+        title = job.get('title', '').lower()
+        combined_text = f"{title} {description}"
         
-        # Find matching elements with similarity threshold
-        matching_skills = [
-            skill for skill in user_profile.get('skills', [])
-            if self._get_skill_similarity(skill, job.get('description', '')) > 0.3
+        # Separate different types of matches
+        user_skills = user_profile.get('skills', [])  # ONLY technical/professional skills
+        user_culture = user_profile.get('work_culture', [])  # Work environment preferences
+        user_values = user_profile.get('core_values', [])  # Personal values
+        
+        print(f"\nChecking SKILLS only: {user_skills}")  # Should only show actual skills
+        
+        # Better skill context matching
+        technical_skills_context = {
+            'build': ['software', 'application', 'system', 'platform', 'infrastructure'],
+            'programming': ['code', 'develop', 'software', 'engineering', 'technical'],
+            'design': ['software', 'system', 'technical', 'architecture'],
+            'technical expertise': ['engineering', 'software', 'development', 'technical']
+        }
+        
+        # Only count technical skills if they appear in proper context
+        strong_skill_matches = []
+        for skill in user_skills:
+            if skill.lower() in technical_skills_context:
+                # Check if any context words appear near the skill
+                context_words = technical_skills_context[skill.lower()]
+                for context in context_words:
+                    if context in combined_text:
+                        strong_skill_matches.append(skill)
+                        break
+            elif self._get_skill_similarity(skill, combined_text) > 0.6:
+                strong_skill_matches.append(skill)
+        
+        moderate_skill_matches = [
+            skill for skill in user_skills
+            if skill not in strong_skill_matches and
+            self._get_skill_similarity(skill, combined_text) > 0.3
         ]
-        print(f"Matching Skills Found: {matching_skills}")
         
+        # Separate matching for culture (different threshold and method)
         matching_culture = [
-            culture for culture in user_profile.get('work_culture', [])
-            if self._get_skill_similarity(culture, job.get('description', '')) > 0.3
+            culture for culture in user_culture
+            if culture.lower() in combined_text or  # Direct match
+            any(word in combined_text for word in culture.lower().split())  # Partial match
         ]
-        print(f"Matching Culture Found: {matching_culture}")
         
+        # Separate matching for values (different threshold and method)
         matching_values = [
-            value for value in user_profile.get('core_values', [])
-            if self._get_skill_similarity(value, job.get('description', '')) > 0.3
+            value for value in user_values
+            if value.lower() in combined_text or  # Direct match
+            any(word in combined_text for word in value.lower().split())  # Partial match
         ]
-        print(f"Matching Values Found: {matching_values}")
         
-        # Calculate component scores
-        user_skills = user_profile.get('skills', [])
-        user_culture = user_profile.get('work_culture', [])
-        user_values = user_profile.get('core_values', [])
-        
-        skills_score = skill_match if skill_match > 0 else (len(matching_skills) / len(user_skills) if user_skills else 0)
+        # Calculate scores
+        skills_score = (
+            (len(strong_skill_matches) * 1.5 + len(moderate_skill_matches)) / 
+            len(user_skills) if user_skills else 0
+        )
         culture_score = len(matching_culture) / len(user_culture) if user_culture else 0
         values_score = len(matching_values) / len(user_values) if user_values else 0
         
-        print(f"Component Scores:")
-        print(f"- Skills Score: {skills_score}")
-        print(f"- Culture Score: {culture_score}")
-        print(f"- Values Score: {values_score}")
+        print(f"\nMatches Found:")
+        print(f"Strong Skills: {strong_skill_matches}")
+        print(f"Moderate Skills: {moderate_skill_matches}")
+        print(f"Culture: {matching_culture}")
+        print(f"Values: {matching_values}")
+        
+        print(f"\nScores:")
+        print(f"Skills: {skills_score:.2f}")
+        print(f"Culture: {culture_score:.2f}")
+        print(f"Values: {values_score:.2f}")
         
         # Final weighted score
         final_score = (
-            skills_score * 0.5 +      # 50% skills
-            culture_score * 0.3 +     # 30% culture
-            values_score * 0.2        # 20% values
+            skills_score * 0.8 +    # 80% skills (increased from 70%)
+            culture_score * 0.15 +  # 15% culture (reduced from 20%)
+            values_score * 0.05     # 5% values (reduced from 10%)
         )
-        print(f"Final Score: {final_score}")
+        
+        print(f"Final Score: {final_score:.2f}")
         print("=" * 50)
         
-        return final_score, matching_skills, matching_culture, matching_values
+        # Return all matching skills combined
+        return final_score, strong_skill_matches + moderate_skill_matches, matching_culture, matching_values
 
     def extract_skills_from_description(self, description: str) -> List[str]:
         """Extract likely skills from job description"""

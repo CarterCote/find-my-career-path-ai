@@ -4,6 +4,33 @@ import random
 import matplotlib.pyplot as plt
 from datetime import datetime
 from typing import Dict, List
+import sys
+
+class TeeStream:
+    """Custom stream that writes to both file and console"""
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.logfile = open(filename, 'w', encoding='utf-8')
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.logfile.write(message)
+        self.logfile.flush()
+
+    def flush(self):
+        self.terminal.flush()
+        self.logfile.flush()
+
+def setup_logging():
+    """Configure logging to capture all terminal output"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_filename = f'chat_session_{timestamp}.log'
+    
+    # Redirect stdout to our custom stream
+    sys.stdout = TeeStream(log_filename)
+    
+    print(f"Starting new chat session - Log file: {log_filename}")
+    return log_filename
 
 def display_evaluations(evaluations_data):
     """Helper function to display evaluation results consistently"""
@@ -87,6 +114,7 @@ def plot_performance_data(performance_data: Dict):
         print(f"Error plotting performance data: {str(e)}")
 
 def chat():
+    log_filename = setup_logging()
     print("\nCareer Path AI Assistant")
     print("-" * 50)
     print("1. Create recommendations from a profile")
