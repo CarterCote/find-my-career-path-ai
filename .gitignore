@@ -42,12 +42,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-backend/data/
 
 # Environment variables
 backend/.env
 backend/.env.local
 backend/.env.test
-
-backend/src/data/evaluation/fake_humans.py
-backend/src/data/evaluation/fake_humans_results.json
+backend/data
+backend/data/evaluation
+backend/data/evaluation/fake_humans_results.json
+backend/src/data/fake_humans.py
+backend/src/data/fake_humans_results.json
