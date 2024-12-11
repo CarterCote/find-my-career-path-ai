@@ -52,3 +52,5 @@ backend/data/evaluation
 backend/data/evaluation/fake_humans_results.json
 backend/src/data/fake_humans.py
 backend/src/data/fake_humans_results.json
+
+chat_session_*.log
