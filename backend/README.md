@@ -10,12 +10,10 @@ cd backend
 uvicorn src.main:app --reload
 ```
 
-2. In a separate terminal, start the Celery worker:
+2. In a separate terminal, start the CLI interface:
 ```bash
 cd backend
-celery -A src.celery_worker worker --loglevel=info
+python src/temp_chat_cli.py
 ```
 
 ## Development
-
-Make sure you have Redis running locally as it's required for Celery task queuing.

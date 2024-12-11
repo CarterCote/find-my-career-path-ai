@@ -1,4 +1,4 @@
-Starting new chat session - Log file: chat_session_20241203_223643.log
+Starting new chat session - Log file: chat_session_20241204_135233.log
 
 Career Path AI Assistant
 --------------------------------------------------
@@ -337,6 +337,14 @@ ID: 82 - Session: session-5490058
     Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge']
     Culture: ['inspiring', 'fast-paced', 'growth potential', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work']
     Skills: ['build', 'design/create', 'customer/client focus', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'technical expertise', 'strategic planning']
+ID: 83 - Session: session-2036391
+    Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge', 'success', 'achievement']
+    Culture: ['inspiring', 'fast-paced', 'growth potential', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work', 'geographical location', 'flexibility']
+    Skills: ['build', 'design/create', 'customer/client focus', 'make decisions', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'technical expertise', 'strategic planning', 'adaptability']
+ID: 84 - Session: session-1538245
+    Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge', 'success', 'achievement']
+    Culture: ['growth potential', 'inspiring', 'fast-paced', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work', 'geographical location', 'flexibility']
+    Skills: ['build', 'technical expertise', 'customer/client focus', 'design/create', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'strategic planning', 'adaptability', 'make decisions']
 
 Enter user ID to use their preferences: 
 Using the following preferences:
@@ -350,189 +358,6 @@ Debug - About to make POST request to /chat with:
 message: Based on my profile, what specific questions should I answer to help refine my job search?
 chat_session_id: session-4027597
 
-Assistant: "Given your interest in challenging and engaging work, have you ever considered a career in tech where you can use your programming and problem-solving skills?"
+Assistant: Your job recommendations are ready! Let me know if you'd like to start a new search.
 
 Your answer: 
-Assistant: "What aspects of a fast-paced and innovative work environment do you find most appealing, and how do you see these aligning with your goals for personal development and impact in a tech or software role?"
-
-Your answer: 
-Assistant: Great! I've gathered all the information I need. Let me show you the recommendations that best match your preferences.
-
-Q&A session complete! Getting job recommendations...
-
-Fetching job recommendations...
-
-Job Recommendations:
---------------------------------------------------
-
-Job: Group Lead OT Digital Manufacturing
-Company: Kraft Heinz
-Match Score: 0.76
-Matching Skills: build, programming, technical expertise, strategic planning, programming, problem-solving
-Matching Culture: growth potential, innovation, engaging work, challenging, professional development, fast-paced and innovative
-Location: Pittsburgh, PA
-------------------------------
-
-Job: Associate Director- Net Zero Program Lead
-Company: Kraft Heinz
-Match Score: 0.75
-Matching Skills: programming, technical expertise, strategic planning, adaptability, programming, problem-solving, build
-Matching Culture: growth potential, collaboration, innovation, engaging work, challenging, fast-paced and innovative
-Location: Chicago, IL
-------------------------------
-
-Job: Associate Director- Net Zero Program Lead
-Company: Kraft Heinz
-Match Score: 0.75
-Matching Skills: programming, technical expertise, strategic planning, adaptability, programming, problem-solving, build
-Matching Culture: growth potential, collaboration, innovation, engaging work, challenging, fast-paced tech environment
-Location: Chicago, IL
-------------------------------
-
-Job: Senior Medical Director, Clinical Development-(Rheumatology)
-Company: Alpine Immune Sciences, Inc.
-Match Score: 0.74
-Matching Skills: build, programming, think critically, technical expertise, programming, problem-solving
-Matching Culture: inspiring, fast-paced, collaboration, engaging work, professional development, fast-paced and innovative
-Location: United States
-------------------------------
-
-Job: Sourcing Manager
-Company: Ingersoll Rand
-Match Score: 0.73
-Matching Skills: build, programming, technical expertise, interpret data, programming, problem-solving, strategic planning
-Matching Culture: entrepreneurial, engaging work, challenging, fast-paced and innovative
-Location: Sidney, OH
-------------------------------
-
-Job: Climate Sustainability Intern
-Company: Doctors Without Borders/Médecins Sans Frontières - USA
-Match Score: 0.72
-Matching Skills: build, programming, technical expertise, adaptability, programming, problem-solving
-Matching Culture: fast-paced, growth potential, collaboration, innovation, engaging work, professional development, fast-paced and innovative
-Location: New York, NY
-------------------------------
-
-Job: Group Lead OT Digital Manufacturing
-Company: Kraft Heinz
-Match Score: 0.71
-Matching Skills: build, programming, technical expertise, strategic planning, programming, problem-solving
-Matching Culture: growth potential, innovation, engaging work, challenging, professional development, fast-paced tech environment
-Location: Pittsburgh, PA
-------------------------------
-
-Job: Chief Data Engineer
-Company: Noblis
-Match Score: 0.71
-Matching Skills: build, programming, programming, design, interpret data
-Matching Culture: fast-paced, growth potential, innovation, engaging work, professional development, tech startup
-Location: Reston, VA
-------------------------------
-
-Job: Senior Medical Director, Clinical Development-(Rheumatology)
-Company: Alpine Immune Sciences, Inc.
-Match Score: 0.70
-Matching Skills: build, programming, think critically, technical expertise, programming, problem-solving
-Matching Culture: inspiring, fast-paced, collaboration, engaging work, professional development, fast-paced tech environment, fast-paced
-Location: United States
-------------------------------
-
-Job: Sourcing Manager
-Company: Ingersoll Rand
-Match Score: 0.67
-Matching Skills: build, programming, technical expertise, interpret data, programming, problem-solving, strategic planning
-Matching Culture: entrepreneurial, engaging work, challenging, fast-paced tech environment
-Location: Sidney, OH
-------------------------------
-
-Job: Chief Data Engineer
-Company: Noblis
-Match Score: 0.67
-Matching Skills: build, programming, programming, interpret data
-Matching Culture: fast-paced, growth potential, innovation, engaging work, professional development
-Location: Reston, VA
-------------------------------
-
-Job: Senior Data Scientist 3 - Nonproliferation
-Company: Pacific Northwest National Laboratory
-Match Score: 0.65
-Matching Skills: programming, programming, design, technical expertise
-Matching Culture: collaboration, innovation, engaging work, challenging, professional development, tech startup
-Location: Richland, WA
-------------------------------
-
-Job: Production Supervisor
-Company: Ingersoll Rand
-Match Score: 0.60
-Matching Skills: build, programming, programming, design, technical expertise
-Matching Culture: entrepreneurial, engaging work, professional development, tech startup
-Location: Alsip, IL
-------------------------------
-
-Job: Climate Sustainability Intern
-Company: Doctors Without Borders/Médecins Sans Frontières - USA
-Match Score: 0.60
-Matching Skills: build, programming, technical expertise, adaptability, programming, problem-solving
-Matching Culture: fast-paced, growth potential, collaboration, innovation, engaging work, professional development, fast-paced tech environment, fast-paced
-Location: New York, NY
-------------------------------
-
-Job: Complex Inforce Processor
-Company: Equitable
-Match Score: 0.59
-Matching Skills: build, problem solving, programming, technical expertise, programming
-Matching Culture: fast-paced, growth potential, collaboration, engaging work
-Location: Syracuse, NY
-------------------------------
-
-Job: Production Supervisor
-Company: Ingersoll Rand
-Match Score: 0.58
-Matching Skills: build, programming, programming, problem solving, technical expertise
-Matching Culture: entrepreneurial, engaging work, professional development
-Location: Alsip, IL
-------------------------------
-
-Job: Community Resource Center Specialist II
-Company: L.A. Care Health Plan
-Match Score: 0.49
-Matching Skills: build, programming, adaptability, programming
-Matching Culture: collaboration, engaging work, professional development
-Location: Norwalk, CA
-------------------------------
-
-Job: Lead Community Resource Center
-Company: L.A. Care Health Plan
-Match Score: 0.47
-Matching Skills: build, programming, adaptability, programming
-Matching Culture: growth potential, collaboration, engaging work, professional development
-Location: Long Beach, CA
-------------------------------
-
-Job: Community Resource Center Specialist III
-Company: L.A. Care Health Plan
-Match Score: 0.46
-Matching Skills: build, programming, adaptability, programming
-Matching Culture: collaboration, engaging work, professional development, tech startup
-Location: Long Beach, CA
-------------------------------
-
-Job: Community Resource Center Specialist II
-Company: L.A. Care Health Plan
-Match Score: 0.45
-Matching Skills: build, programming, adaptability, programming
-Matching Culture: collaboration, engaging work, professional development, tech startup
-Location: Norwalk, CA
-------------------------------
-
-What would you like to do?
-1. Start new profile
-2. Exit
-Your choice (1 or 2): Starting new chat session - Log file: chat_session_20241204_133029.log
-
-Career Path AI Assistant
---------------------------------------------------
-1. Create recommendations from a profile
-2. Update recommendations from a profile
-
-Enter your choice (1 or 2): 

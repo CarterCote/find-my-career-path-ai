@@ -1,4 +1,4 @@
-Starting new chat session - Log file: chat_session_20241203_223643.log
+Starting new chat session - Log file: chat_session_20241204_133124.log
 
 Career Path AI Assistant
 --------------------------------------------------
@@ -337,6 +337,14 @@ ID: 82 - Session: session-5490058
     Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge']
     Culture: ['inspiring', 'fast-paced', 'growth potential', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work']
     Skills: ['build', 'design/create', 'customer/client focus', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'technical expertise', 'strategic planning']
+ID: 83 - Session: session-2036391
+    Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge', 'success', 'achievement']
+    Culture: ['inspiring', 'fast-paced', 'growth potential', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work', 'geographical location', 'flexibility']
+    Skills: ['build', 'design/create', 'customer/client focus', 'make decisions', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'technical expertise', 'strategic planning', 'adaptability']
+ID: 84 - Session: session-1538245
+    Values: ['integrity', 'personal development', 'family/friends', "fulfilling one's potential", 'authenticity', 'impact', 'creativity', 'excellence', 'intellectual challenge', 'success', 'achievement']
+    Culture: ['growth potential', 'inspiring', 'fast-paced', 'ethical leadership', 'collaboration', 'entrepreneurial', 'innovation', 'professional development', 'engaging work', 'geographical location', 'flexibility']
+    Skills: ['build', 'technical expertise', 'customer/client focus', 'design/create', 'persuade/sell', 'programming', 'solve complex problems', 'think critically', 'strategic planning', 'adaptability', 'make decisions']
 
 Enter user ID to use their preferences: 
 Using the following preferences:
@@ -350,10 +358,13 @@ Debug - About to make POST request to /chat with:
 message: Based on my profile, what specific questions should I answer to help refine my job search?
 chat_session_id: session-4027597
 
-Assistant: "Given your interest in challenging and engaging work, have you ever considered a career in tech where you can use your programming and problem-solving skills?"
+Assistant: "Do you think you'd enjoy using your programming skills to make an impact in the healthcare industry?"
 
 Your answer: 
-Assistant: "What aspects of a fast-paced and innovative work environment do you find most appealing, and how do you see these aligning with your goals for personal development and impact in a tech or software role?"
+Assistant: What aspects of working in consumer software appeal to you the most, and how do you see your skills in design and strategic planning playing a role in that industry?
+
+Your answer: 
+Assistant: How important is it for you to work in a collaborative environment where you can engage with and learn from others, and how do you think this would impact your ability to create software that reaches millions of people?
 
 Your answer: 
 Assistant: Great! I've gathered all the information I need. Let me show you the recommendations that best match your preferences.
@@ -364,6 +375,30 @@ Fetching job recommendations...
 
 Job Recommendations:
 --------------------------------------------------
+
+Job: Group Lead OT Digital Manufacturing
+Company: Kraft Heinz
+Match Score: 0.80
+Matching Skills: build, programming, technical expertise, strategic planning, programming, design, strategic planning
+Matching Culture: growth potential, innovation, engaging work, challenging, professional development
+Location: Pittsburgh, PA
+------------------------------
+
+Job: Product Manager
+Company: IBM
+Match Score: 0.77
+Matching Skills: build, programming, technical expertise, programming, design, strategic planning, strategic planning
+Matching Culture: growth potential, innovation, engaging work, challenging, professional development
+Location: San Jose, CA
+------------------------------
+
+Job: Director, IT Support Engineering
+Company: Coinbase
+Match Score: 0.77
+Matching Skills: build, programming, technical expertise, strategic planning, programming, design, strategic planning
+Matching Culture: growth potential, collaboration, engaging work, professional development, collaborative
+Location: Washington, DC
+------------------------------
 
 Job: Group Lead OT Digital Manufacturing
 Company: Kraft Heinz
@@ -389,12 +424,28 @@ Matching Culture: growth potential, collaboration, innovation, engaging work, ch
 Location: Chicago, IL
 ------------------------------
 
+Job: Associate Director- Net Zero Program Lead
+Company: Kraft Heinz
+Match Score: 0.75
+Matching Skills: programming, technical expertise, strategic planning, adaptability, programming, design, strategic planning, build
+Matching Culture: growth potential, collaboration, innovation, engaging work, challenging
+Location: Chicago, IL
+------------------------------
+
 Job: Senior Medical Director, Clinical Development-(Rheumatology)
 Company: Alpine Immune Sciences, Inc.
 Match Score: 0.74
 Matching Skills: build, programming, think critically, technical expertise, programming, problem-solving
 Matching Culture: inspiring, fast-paced, collaboration, engaging work, professional development, fast-paced and innovative
 Location: United States
+------------------------------
+
+Job: Sourcing Manager
+Company: Ingersoll Rand
+Match Score: 0.73
+Matching Skills: build, programming, technical expertise, interpret data, programming, design, strategic planning, strategic planning
+Matching Culture: entrepreneurial, engaging work, challenging, collaborative
+Location: Sidney, OH
 ------------------------------
 
 Job: Sourcing Manager
@@ -528,11 +579,5 @@ Location: Norwalk, CA
 What would you like to do?
 1. Start new profile
 2. Exit
-Your choice (1 or 2): Starting new chat session - Log file: chat_session_20241204_133029.log
-
-Career Path AI Assistant
---------------------------------------------------
-1. Create recommendations from a profile
-2. Update recommendations from a profile
-
-Enter your choice (1 or 2): 
+Your choice (1 or 2): 
+Thank you for using Career Path AI Assistant!
